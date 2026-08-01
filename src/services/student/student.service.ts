@@ -1,0 +1,307 @@
+import { Types } from "mongoose";
+import { Student } from "../../models/student/student.model";
+import { User } from "../../models/user/user.model";
+import { Class } from "../../models/class/class.model";
+import { ExamResult } from "../../models/examResult/examResult.model";
+import { Exam } from "../../models/exam/exam.model";
+import { generateAdmissionNo } from "../../utils/generateAdmissionNo";
+import bcrypt from "bcrypt";
+import { AppError } from "../../utils/AppError";
+import { CreateStudentInput } from "../../validations/student/student.validation";
+import { notificationService } from "../notification/notification.service";
+
+export const studentService = {
+  getAll: async (instituteId: string, query: { search?: string; batch?: string; feeStatus?: string }) => {
+    const filter: Record<string, unknown> = {
+      instituteId,
+      status: { $ne: "deleted" },
+    };
+
+    // Filter by batch: look up class by name to get _id, then filter by batchId
+    // This handles names with special chars like "Class 12 (Science)"
+    if (query.batch && query.batch !== "all") {
+      const escaped = query.batch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const matchingClasses = await Class.find({
+        instituteId,
+        name: { $regex: `^${escaped}$`, $options: "i" },
+        status: { $ne: "deleted" },
+      }).select("_id name");
+
+      if (matchingClasses.length > 0) {
+        // Filter by batchId (most reliable after shifts)
+        filter.batchId = { $in: matchingClasses.map((c) => c._id) };
+      } else {
+        // Fallback: match batchName string (for legacy data)
+        filter.$or = [
+          { batchName: { $regex: `^${escaped}$`, $options: "i" } },
+          { className: { $regex: `^${escaped}$`, $options: "i" } },
+        ];
+      }
+    }
+
+    if (query.feeStatus) {
+      filter.feeStatus = query.feeStatus;
+    }
+
+    // Note: search $or is separate — don't overwrite batch filter
+    if (query.search) {
+      const searchRegex = { $regex: query.search, $options: "i" };
+      const searchOr = [
+        { name: searchRegex },
+        { admissionNo: searchRegex },
+        { phone: searchRegex },
+        { parentPhone: searchRegex },
+      ];
+      // Combine search with existing batch filter using $and
+      if (filter.$or || filter.batchId) {
+        filter.$and = [
+          filter.$or ? { $or: filter.$or as unknown[] } : { batchId: filter.batchId },
+          { $or: searchOr },
+        ];
+        delete filter.$or;
+        if (filter.batchId) delete filter.batchId;
+      } else {
+        filter.$or = searchOr;
+      }
+    }
+
+    const students = await Student.find(filter).sort({ createdAt: -1 });
+    return students;
+  },
+
+  getById: async (id: string, instituteId: string) => {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new AppError("Invalid Student ID format", 400);
+    }
+
+    const instIdObj = new Types.ObjectId(instituteId);
+    const idObj = new Types.ObjectId(id);
+
+    // Search by student._id OR userId
+    let student = await Student.findOne({ _id: idObj, instituteId: instIdObj, status: { $ne: "deleted" } });
+    if (!student) {
+      student = await Student.findOne({ userId: idObj, instituteId: instIdObj, status: { $ne: "deleted" } });
+    }
+
+    if (!student) throw new AppError("Student record not found", 404);
+
+    const studentObj = student.toObject();
+
+    // Look up class details to get real batch timing
+    let classDoc = null;
+    if (student.batchId) {
+      classDoc = await Class.findOne({ _id: student.batchId, instituteId: instIdObj });
+    }
+    if (!classDoc && (student.batchName || student.schoolClass)) {
+      const clsName = student.batchName || student.schoolClass;
+      const escaped = (clsName || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      classDoc = await Class.findOne({
+        instituteId: instIdObj,
+        name: { $regex: `^${escaped}$`, $options: "i" },
+        status: { $ne: "deleted" },
+      });
+    }
+
+    return {
+      ...studentObj,
+      timing: classDoc?.timing || student.timing || "07:00 AM - 08:30 AM",
+      shift: classDoc?.shift || "morning",
+      days: classDoc?.days || "Mon – Sat (Daily)",
+    };
+  },
+
+  create: async (data: CreateStudentInput, instituteId: string) => {
+    const existing = await Student.findOne({ phone: data.phone, instituteId, status: { $ne: "deleted" } });
+    if (existing) {
+      throw new AppError("A student with this phone number already exists", 409);
+    }
+
+    const admissionNo = await generateAdmissionNo(instituteId);
+    const fullName = data.name || `${data.firstName || ""} ${data.lastName || ""}`.trim() || "Student";
+    const batchOrClass = data.className || data.batchName || "General Class";
+
+    // Auto-resolve batchId from className if batchId is not provided
+    let resolvedBatchId = data.batchId;
+    if (!resolvedBatchId) {
+      const clsDoc = await Class.findOne({ instituteId, name: batchOrClass, status: { $ne: "deleted" } });
+      if (clsDoc) {
+        resolvedBatchId = clsDoc._id.toString();
+      }
+    }
+
+    // Auto-create login User credential for Student
+    const defaultPassword = "Student@123";
+    const passwordHash = await bcrypt.hash(defaultPassword, 10);
+
+    const user = await User.create({
+      instituteId,
+      role: "student",
+      name: fullName,
+      email: data.email || `${admissionNo.toLowerCase()}@coaching.local`,
+      phone: data.phone,
+      passwordHash,
+    });
+
+    const student = await Student.create({
+      ...data,
+      name: fullName,
+      batchName: batchOrClass,
+      batchId: resolvedBatchId,
+      admissionNo,
+      instituteId,
+      userId: user._id,
+      feeStatus: "pending",
+      monthlyFee: Number(data.monthlyFee) || 1500,
+      attendancePercentage: 100,
+    });
+
+    user.linkedId = student._id as unknown as import("mongoose").Types.ObjectId;
+    await user.save();
+
+    // Trigger Welcome & Batch Enrolled Notifications
+    notificationService.sendWelcomeNotification(instituteId, student._id, user._id, fullName).catch(() => {});
+    notificationService.sendBatchEnrolledNotification(instituteId, student._id, user._id, fullName, batchOrClass).catch(() => {});
+
+    return student;
+  },
+
+  update: async (id: string, data: Partial<CreateStudentInput>, instituteId: string) => {
+    const updateData = { ...data } as Record<string, unknown>;
+
+    const existingStudent = await Student.findOne({ _id: id, instituteId, status: { $ne: "deleted" } });
+    const oldBatchName = existingStudent?.batchName || "";
+
+    if ((data.className || data.batchName) && !data.batchId) {
+      const clsName = data.className || data.batchName;
+      const clsDoc = await Class.findOne({ instituteId, name: clsName, status: { $ne: "deleted" } });
+      if (clsDoc) {
+        updateData.batchId = clsDoc._id.toString();
+        updateData.batchName = clsDoc.name;
+      }
+    } else if (data.batchId) {
+      const clsDoc = await Class.findOne({ instituteId, _id: data.batchId, status: { $ne: "deleted" } });
+      if (clsDoc) {
+        updateData.batchName = clsDoc.name;
+        updateData.className = clsDoc.name;
+      }
+    }
+
+    const student = await Student.findOneAndUpdate(
+      { _id: id, instituteId },
+      { $set: updateData },
+      { new: true, runValidators: true }
+    );
+
+    if (student && student.userId && updateData.batchName && updateData.batchName !== oldBatchName) {
+      // Trigger Targeted Batch Changed Notification ONLY to this specific student!
+      notificationService
+        .sendBatchChangedNotification(
+          instituteId,
+          student._id,
+          student.userId,
+          student.name,
+          oldBatchName || "Previous Class",
+          student.batchName || "New Batch",
+          student.timing
+        )
+        .catch(() => {});
+    }
+    if (!student) throw new AppError("Student not found", 404);
+    return student;
+  },
+
+  delete: async (id: string, instituteId: string) => {
+    const student = await Student.findOneAndUpdate(
+      { _id: id, instituteId },
+      { $set: { status: "deleted" } },
+      { new: true }
+    );
+    if (!student) throw new AppError("Student not found", 404);
+    return student;
+  },
+
+  getExamResults: async (studentId: string, instituteId: string) => {
+    if (!Types.ObjectId.isValid(studentId)) {
+      throw new AppError("Invalid Student ID format", 400);
+    }
+
+    const instIdObj = new Types.ObjectId(instituteId);
+    const studIdObj = new Types.ObjectId(studentId);
+
+    // Search by student._id OR userId
+    let student = await Student.findOne({ _id: studIdObj, instituteId: instIdObj, status: { $ne: "deleted" } });
+    if (!student) {
+      student = await Student.findOne({ userId: studIdObj, instituteId: instIdObj, status: { $ne: "deleted" } });
+    }
+
+    const targetStudentId = student ? student._id : studIdObj;
+    const targetStudentName = student ? (student.name || `${student.firstName || ""} ${student.lastName || ""}`.trim()) : "";
+
+    const queryOr: Record<string, unknown>[] = [
+      { studentId: targetStudentId },
+      { studentId: studIdObj },
+    ];
+    if (targetStudentName) {
+      queryOr.push({ studentName: { $regex: `^${targetStudentName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: "i" } });
+    }
+    if (student?.firstName) {
+      queryOr.push({ studentName: { $regex: student.firstName, $options: "i" } });
+    }
+
+    const rawResults = await ExamResult.find({
+      instituteId: instIdObj,
+      status: { $ne: "deleted" },
+      $or: queryOr,
+    }).sort({ createdAt: -1 });
+
+    const resultsWithExamDetails = await Promise.all(
+      rawResults.map(async (res) => {
+        const examDoc = await Exam.findOne({ _id: res.examId, instituteId: instIdObj });
+        return {
+          id: res._id.toString(),
+          examId: res.examId.toString(),
+          testTitle: examDoc?.title || "Tuition Chapter Test",
+          subject: examDoc?.subject || "General",
+          examType: examDoc?.examType || "mock_test",
+          examDate: examDoc?.examDate || res.createdAt,
+          batchName: examDoc?.batchName || student?.batchName || "Tuition Batch",
+          marksObtained: res.marksObtained,
+          totalMarks: res.totalMarks,
+          passingMarks: res.passingMarks,
+          isPassed: res.isPassed,
+          rank: res.rank || 1,
+          remarks: res.remarks || "",
+          answers: res.studentAnswers || [],
+          createdAt: res.createdAt,
+        };
+      })
+    );
+
+    const totalTestsTaken = resultsWithExamDetails.length;
+    let totalMarksObtained = 0;
+    let totalPossibleMarks = 0;
+    let passedCount = 0;
+
+    resultsWithExamDetails.forEach((r) => {
+      totalMarksObtained += r.marksObtained;
+      totalPossibleMarks += r.totalMarks;
+      if (r.isPassed) passedCount++;
+    });
+
+    const averagePercentage = totalPossibleMarks > 0 ? Math.round((totalMarksObtained / totalPossibleMarks) * 100) : 0;
+    const passRatePercentage = totalTestsTaken > 0 ? Math.round((passedCount / totalTestsTaken) * 100) : 0;
+
+    return {
+      summary: {
+        totalTestsTaken,
+        totalMarksObtained,
+        totalPossibleMarks,
+        averagePercentage,
+        passedCount,
+        failedCount: totalTestsTaken - passedCount,
+        passRatePercentage,
+      },
+      results: resultsWithExamDetails,
+    };
+  },
+};
