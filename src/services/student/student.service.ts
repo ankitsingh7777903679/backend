@@ -4,11 +4,13 @@ import { User } from "../../models/user/user.model";
 import { Class } from "../../models/class/class.model";
 import { ExamResult } from "../../models/examResult/examResult.model";
 import { Exam } from "../../models/exam/exam.model";
+import { Institute } from "../../models/institute/institute.model";
 import { generateAdmissionNo } from "../../utils/generateAdmissionNo";
 import bcrypt from "bcrypt";
 import { AppError } from "../../utils/AppError";
 import { CreateStudentInput } from "../../validations/student/student.validation";
 import { notificationService } from "../notification/notification.service";
+import { emailService } from "../email/email.service";
 
 export const studentService = {
   getAll: async (instituteId: string, query: { search?: string; batch?: string; feeStatus?: string }) => {
@@ -129,34 +131,60 @@ export const studentService = {
       }
     }
 
-    // Auto-create login User credential for Student
-    const defaultPassword = "Student@123";
-    const passwordHash = await bcrypt.hash(defaultPassword, 10);
+    // Auto-generate a strong password for new student
+    const autoPassword = `Tp${admissionNo}@${new Date().getFullYear()}`;
+    const passwordHash = await bcrypt.hash(autoPassword, 10);
+    const studentEmail = data.email?.trim().toLowerCase() || null;
 
     const user = await User.create({
       instituteId,
       role: "student",
       name: fullName,
-      email: data.email || `${admissionNo.toLowerCase()}@coaching.local`,
+      email: studentEmail || `${admissionNo.toLowerCase()}@coaching.local`,
       phone: data.phone,
       passwordHash,
     });
 
-    const student = await Student.create({
-      ...data,
-      name: fullName,
-      batchName: batchOrClass,
-      batchId: resolvedBatchId,
-      admissionNo,
-      instituteId,
-      userId: user._id,
-      feeStatus: "pending",
-      monthlyFee: Number(data.monthlyFee) || 1500,
-      attendancePercentage: 100,
-    });
+    let student;
+    try {
+      student = await Student.create({
+        ...data,
+        name: fullName,
+        email: studentEmail,
+        batchName: batchOrClass,
+        batchId: resolvedBatchId,
+        admissionNo,
+        instituteId,
+        userId: user._id,
+        feeStatus: "pending",
+        monthlyFee: Number(data.monthlyFee) || 1500,
+        attendancePercentage: 100,
+      });
 
-    user.linkedId = student._id as unknown as import("mongoose").Types.ObjectId;
-    await user.save();
+      user.linkedId = student._id as unknown as import("mongoose").Types.ObjectId;
+      await user.save();
+    } catch (err) {
+      await User.findByIdAndDelete(user._id);
+      throw err;
+    }
+
+    // Send Welcome Email with Login Credentials if email is provided
+    if (studentEmail) {
+      Institute.findById(instituteId).then((inst) => {
+        emailService.sendWelcomeCredentialsEmail(
+          studentEmail,
+          fullName,
+          studentEmail,
+          autoPassword,
+          "student",
+          inst?.code
+        ).catch(() => {
+          console.log(`[StudentService] Credentials console fallback | Email: ${studentEmail} | Password: ${autoPassword} | Code: ${inst?.code}`);
+        });
+      }).catch(() => {});
+    } else {
+      console.log(`[StudentService] No email provided | AdmNo: ${admissionNo} | Password: ${autoPassword}`);
+    }
 
     // Trigger Welcome & Batch Enrolled Notifications
     notificationService.sendWelcomeNotification(instituteId, student._id, user._id, fullName).catch(() => {});
@@ -191,8 +219,20 @@ export const studentService = {
       { $set: updateData },
       { new: true, runValidators: true }
     );
+    if (!student) throw new AppError("Student not found", 404);
 
-    if (student && student.userId && updateData.batchName && updateData.batchName !== oldBatchName) {
+    // Sync updates to linked User account
+    if (student.userId) {
+      const userUpdate: Record<string, unknown> = {};
+      if (data.name) userUpdate.name = data.name;
+      if (data.phone) userUpdate.phone = data.phone;
+      if (data.email) userUpdate.email = data.email.trim().toLowerCase();
+      if (Object.keys(userUpdate).length > 0) {
+        await User.updateOne({ _id: student.userId }, { $set: userUpdate });
+      }
+    }
+
+    if (student.userId && updateData.batchName && updateData.batchName !== oldBatchName) {
       // Trigger Targeted Batch Changed Notification ONLY to this specific student!
       notificationService
         .sendBatchChangedNotification(
@@ -206,7 +246,6 @@ export const studentService = {
         )
         .catch(() => {});
     }
-    if (!student) throw new AppError("Student not found", 404);
     return student;
   },
 
@@ -217,6 +256,9 @@ export const studentService = {
       { new: true }
     );
     if (!student) throw new AppError("Student not found", 404);
+    if (student.userId) {
+      await User.findOneAndUpdate({ _id: student.userId, instituteId }, { $set: { status: "deleted" } });
+    }
     return student;
   },
 

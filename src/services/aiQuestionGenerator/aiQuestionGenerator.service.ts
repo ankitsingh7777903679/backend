@@ -154,10 +154,7 @@ export const aiQuestionGeneratorService = {
       fileName,
     } = input;
 
-    let envKey = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
-    if (!envKey && process.env.GOOGLE_API_KEY && !process.env.GOOGLE_API_KEY.startsWith("AQ.")) {
-      envKey = process.env.GOOGLE_API_KEY;
-    }
+    const envKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.OPENAI_API_KEY;
 
     const apiKey = customApiKey || envKey;
 
@@ -236,10 +233,7 @@ export const aiQuestionGeneratorService = {
       fileName,
     } = input;
 
-    let envKey = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
-    if (!envKey && process.env.GOOGLE_API_KEY && !process.env.GOOGLE_API_KEY.startsWith("AQ.")) {
-      envKey = process.env.GOOGLE_API_KEY;
-    }
+    const envKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.OPENAI_API_KEY;
     const apiKey = customApiKey || envKey;
 
     // Use default blueprint sections if empty
@@ -405,7 +399,7 @@ CRITICAL RULES FOR FULL EXAM PAPER:
   ]
 }`;
 
-    const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-1.5-pro"];
+    const modelsToTry = ["gemini-3.5-flash"];
     let lastError: string | undefined;
 
     try {
@@ -550,7 +544,7 @@ CRITICAL RULES:
   }
 ]`;
 
-    const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-1.5-pro"];
+    const modelsToTry = ["gemini-3.5-flash"];
     let lastError: string | undefined;
 
     try {

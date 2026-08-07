@@ -382,11 +382,7 @@ export const reportService = {
         batchRank,
         totalBatchEnrolled,
       },
-      subjectWiseSummary: subjectWiseSummary.length > 0 ? subjectWiseSummary : [
-        { subject: "Physics", testsCount: 3, marksObtained: 270, totalMarks: 300, percentage: 90.0, grade: "A+" },
-        { subject: "Chemistry", testsCount: 3, marksObtained: 250, totalMarks: 300, percentage: 83.3, grade: "A" },
-        { subject: "Mathematics", testsCount: 2, marksObtained: 175, totalMarks: 200, percentage: 87.5, grade: "A" },
-      ],
+      subjectWiseSummary,
       recentTests,
       teacherRemarks: remarks,
     };

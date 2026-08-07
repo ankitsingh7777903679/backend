@@ -9,9 +9,10 @@ export const registerInstituteSchema = z.object({
 });
 
 export const loginSchema = z.object({
-  emailOrPhone: z.string().min(1, "Email or phone number is required"),
-  password:     z.string().min(1, "Password is required"),
-  role:         z.enum(["owner", "admin", "teacher", "accountant", "student", "parent", "super_admin"]).optional(),
+  emailOrPhone:  z.string().min(1, "Email or phone number is required"),
+  password:      z.string().min(1, "Password is required"),
+  instituteCode: z.string().optional().or(z.literal("")),
+  role:          z.enum(["owner", "admin", "teacher", "accountant", "student", "parent", "super_admin"]).optional(),
 });
 
 export const refreshTokenSchema = z.object({

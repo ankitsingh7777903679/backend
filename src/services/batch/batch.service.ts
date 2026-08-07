@@ -30,7 +30,7 @@ export const batchService = {
     const batch = await Batch.create({
       ...data,
       instituteId,
-      enrolledCount: Math.floor(Math.random() * 15) + 10, // Mock sample initial enrollments
+      enrolledCount: 0,
     });
     return batch;
   },

@@ -1,74 +1,56 @@
 import { Institute } from "../../models/institute/institute.model";
-import { User } from "../../models/user/user.model";
+import { Student } from "../../models/student/student.model";
 import { AppError } from "../../utils/AppError";
 import { Types } from "mongoose";
 
 export const superAdminService = {
   getOverview: async () => {
-    const totalInstitutes = await Institute.countDocuments({ status: { $ne: "deleted" } });
-    const activeInstitutes = await Institute.countDocuments({ status: "active" });
+    const institutesDoc = await Institute.find({ status: { $ne: "deleted" } }).sort({ createdAt: -1 });
+    const totalInstitutes = institutesDoc.length;
+    const activeInstitutes = institutesDoc.filter((i) => i.status === "active").length;
+
+    const instituteList = await Promise.all(
+      institutesDoc.map(async (inst) => {
+        const studentCount = await Student.countDocuments({ instituteId: inst._id, status: { $ne: "deleted" } });
+        return {
+          id: inst._id.toString(),
+          _id: inst._id.toString(),
+          name: inst.name,
+          ownerName: inst.ownerName || "Institute Admin",
+          email: inst.email,
+          phone: inst.phone || "",
+          planName: inst.subscriptionPlan ? `${inst.subscriptionPlan.toUpperCase()} Plan` : "Starter Tier",
+          renewalDate: inst.updatedAt ? new Date(inst.updatedAt).toISOString().split("T")[0] : "2026-12-31",
+          studentsCount: studentCount,
+          status: inst.status || "active",
+        };
+      })
+    );
 
     return {
-      totalInstitutes: totalInstitutes || 42,
-      activeInstitutes: activeInstitutes || 38,
-      mrr: 845000,
-      activePaidSubscriptions: 38,
-      pendingSupportTickets: 3,
-      systemHealth: "All Systems Operational (Vercel + Render + MongoDB Atlas)",
-      institutes: [
-        {
-          id: "inst1",
-          name: "Apex Academy Kota",
-          ownerName: "Dr. Vikram Singh",
-          email: "vikram@apexkota.com",
-          phone: "9876543210",
-          planName: "Pro Unlimited (₹24,999/yr)",
-          renewalDate: "2026-08-15",
-          studentsCount: 320,
-          status: "active",
-        },
-        {
-          id: "inst2",
-          name: "Chaitanya Science Classes",
-          ownerName: "Prof. Rajesh Verma",
-          email: "rajesh@chaitanyaclasses.com",
-          phone: "9823456789",
-          planName: "Standard Tier (₹14,999/yr)",
-          renewalDate: "2026-09-01",
-          studentsCount: 185,
-          status: "active",
-        },
-        {
-          id: "inst3",
-          name: "Pioneer IIT-JEE Institute",
-          ownerName: "Suresh Gupta",
-          email: "suresh@pioneeriit.com",
-          phone: "9911223344",
-          planName: "Pro Unlimited (₹24,999/yr)",
-          renewalDate: "2026-07-30",
-          studentsCount: 240,
-          status: "active",
-        },
-        {
-          id: "inst4",
-          name: "Bright Mind Tutorials",
-          ownerName: "Meenakshi Sundaram",
-          email: "info@brightmind.in",
-          phone: "9844556677",
-          planName: "Starter Tier (₹8,999/yr)",
-          renewalDate: "2026-06-15",
-          studentsCount: 95,
-          status: "suspended",
-        },
-      ],
+      totalInstitutes,
+      activeInstitutes,
+      mrr: activeInstitutes * 15000,
+      activePaidSubscriptions: activeInstitutes,
+      pendingSupportTickets: 0,
+      systemHealth: "All Systems Operational (MongoDB + Express)",
+      institutes: instituteList,
     };
   },
 
   toggleInstituteStatus: async (instituteId: string, status: "active" | "suspended") => {
-    if (Types.ObjectId.isValid(instituteId)) {
-      const inst = await Institute.findByIdAndUpdate(instituteId, { $set: { status } }, { new: true });
-      return inst;
+    if (!Types.ObjectId.isValid(instituteId)) {
+      throw new AppError("Invalid institute ID format", 400);
     }
-    return { id: instituteId, status };
+    const inst = await Institute.findByIdAndUpdate(instituteId, { $set: { status } }, { new: true });
+    if (!inst) {
+      throw new AppError("Institute not found", 404);
+    }
+    return {
+      id: inst._id.toString(),
+      _id: inst._id.toString(),
+      name: inst.name,
+      status: inst.status,
+    };
   },
 };

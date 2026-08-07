@@ -1,8 +1,10 @@
 import { Teacher } from "../../models/teacher/teacher.model";
 import { User } from "../../models/user/user.model";
+import { Institute } from "../../models/institute/institute.model";
 import bcrypt from "bcrypt";
 import { AppError } from "../../utils/AppError";
 import { CreateTeacherInput } from "../../validations/teacher/teacher.validation";
+import { emailService } from "../email/email.service";
 
 export const teacherService = {
   getAll: async (instituteId: string, query: { search?: string; type?: string }) => {
@@ -33,27 +35,31 @@ export const teacherService = {
     return teacher;
   },
 
-  create: async (data: CreateTeacherInput, instituteId: string) => {
+  create: async (data: CreateTeacherInput & { password?: string }, instituteId: string) => {
     const existing = await Teacher.findOne({ phone: data.phone, instituteId, status: { $ne: "deleted" } });
     if (existing) {
       throw new AppError("A teacher with this mobile number already exists", 409);
     }
 
-    // Auto-create login User credentials for Teacher
-    const defaultPassword = "Teacher@123";
-    const passwordHash = await bcrypt.hash(defaultPassword, 10);
+    const teacherEmail = data.email?.trim().toLowerCase() || null;
+    const finalPassword = data.password && data.password.trim().length >= 6
+      ? data.password.trim()
+      : `Tp${data.phone.slice(-4)}@${new Date().getFullYear()}`;
+
+    const passwordHash = await bcrypt.hash(finalPassword, 10);
 
     const user = await User.create({
       instituteId,
       role: "teacher",
       name: data.name,
-      email: data.email || `${data.phone}@teacher.local`,
+      email: teacherEmail || `${data.phone}@teacher.local`,
       phone: data.phone,
       passwordHash,
     });
 
     const teacher = await Teacher.create({
       ...data,
+      email: teacherEmail,
       instituteId,
       userId: user._id,
     });
@@ -61,16 +67,69 @@ export const teacherService = {
     user.linkedId = teacher._id as unknown as import("mongoose").Types.ObjectId;
     await user.save();
 
+    // Send Welcome Email with Login Credentials if email provided
+    if (teacherEmail) {
+      Institute.findById(instituteId).then((inst) => {
+        emailService.sendWelcomeCredentialsEmail(
+          teacherEmail,
+          data.name,
+          teacherEmail,
+          finalPassword,
+          "teacher",
+          inst?.code
+        ).catch(() => {
+          console.log(`[TeacherService] Credentials console fallback | Email: ${teacherEmail} | Password: ${finalPassword} | Code: ${inst?.code}`);
+        });
+      }).catch(() => {});
+    } else {
+      console.log(`[TeacherService] No email provided | Phone: ${data.phone} | Password: ${finalPassword}`);
+    }
+
     return teacher;
   },
 
-  update: async (id: string, data: Partial<CreateTeacherInput>, instituteId: string) => {
+  update: async (id: string, data: Partial<CreateTeacherInput & { password?: string }>, instituteId: string) => {
     const teacher = await Teacher.findOneAndUpdate(
       { _id: id, instituteId },
       { $set: data },
       { new: true, runValidators: true }
     );
     if (!teacher) throw new AppError("Teacher not found", 404);
+
+    // Sync updates to linked User account (or create if missing)
+    if (teacher.userId) {
+      const userUpdate: Record<string, unknown> = {};
+      if (data.name) userUpdate.name = data.name;
+      if (data.phone) userUpdate.phone = data.phone;
+      if (data.email) userUpdate.email = data.email.trim().toLowerCase();
+      if (data.password && data.password.trim().length >= 6) {
+        userUpdate.passwordHash = await bcrypt.hash(data.password.trim(), 10);
+      }
+      if (Object.keys(userUpdate).length > 0) {
+        await User.updateOne({ _id: teacher.userId }, { $set: userUpdate });
+      }
+    } else {
+      // Auto-create missing User account for existing teacher
+      const teacherEmail = teacher.email?.trim().toLowerCase() || `${teacher.phone}@teacher.local`;
+      const pass = data.password && data.password.trim().length >= 6
+        ? data.password.trim()
+        : `Tp${teacher.phone.slice(-4)}@${new Date().getFullYear()}`;
+      const passwordHash = await bcrypt.hash(pass, 10);
+
+      const user = await User.create({
+        instituteId,
+        role: "teacher",
+        name: teacher.name,
+        email: teacherEmail,
+        phone: teacher.phone,
+        passwordHash,
+        linkedId: teacher._id,
+      });
+
+      teacher.userId = user._id as unknown as import("mongoose").Types.ObjectId;
+      await teacher.save();
+    }
+
     return teacher;
   },
 
@@ -81,6 +140,9 @@ export const teacherService = {
       { new: true }
     );
     if (!teacher) throw new AppError("Teacher not found", 404);
+    if (teacher.userId) {
+      await User.findOneAndUpdate({ _id: teacher.userId, instituteId }, { $set: { status: "deleted" } });
+    }
     return teacher;
   },
 };

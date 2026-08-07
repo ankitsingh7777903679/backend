@@ -10,7 +10,9 @@ const router = Router();
 router.use(verifyToken);
 
 router.route("/")
-  .get(checkRole("owner", "admin", "accountant", "parent", "student"), feeController.getAllFees)
+  .get(checkRole("owner", "admin", "accountant"), feeController.getAllFees)
   .post(checkRole("owner", "admin", "accountant"), validate("body", recordFeeSchema), feeController.recordFeePayment);
+
+router.get("/ledger/:studentId", checkRole("owner", "admin", "accountant", "parent", "student"), feeController.getStudentLedger);
 
 export default router;

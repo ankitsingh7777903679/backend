@@ -17,6 +17,11 @@ export interface IStudent extends Document {
   batchName?: string;
   schoolName?: string;
   schoolClass?: string;
+  joiningDate?: Date;
+  billingCycleType?: "monthly" | "installment" | "lumpsum";
+  oneTimeRegistrationFee?: number;
+  discountAmount?: number;
+  discountReason?: string;
   monthlyFee?: number;
   timing?: string;
   address?: string;
@@ -40,18 +45,23 @@ const studentSchema = new Schema<IStudent>(
     email:                { type: String, lowercase: true, trim: true },
     gender:               { type: String, enum: ["male", "female", "other"], default: "male" },
     dob:                  { type: Date },
+    joiningDate:          { type: Date, default: Date.now },
+    billingCycleType:     { type: String, enum: ["monthly", "installment", "lumpsum"], default: "monthly" },
+    oneTimeRegistrationFee:{ type: Number, default: 0 },
+    discountAmount:       { type: Number, default: 0 },
+    discountReason:       { type: String, trim: true },
     parentName:           { type: String, required: true, trim: true },
     parentPhone:          { type: String, required: true, trim: true },
     batchId:              { type: Schema.Types.ObjectId, ref: "Batch" },
     batchName:            { type: String, trim: true, default: "General Class" },
     schoolName:           { type: String, trim: true, default: "" },
     schoolClass:          { type: String, trim: true, default: "" },
-    monthlyFee:           { type: Number, default: 1500 },
-    timing:               { type: String, trim: true, default: "05:00 PM" },
+    monthlyFee:           { type: Number, default: 0 },
+    timing:               { type: String, trim: true, default: "" },
     address:              { type: String, trim: true },
     photo:                { type: String },
-    feeStatus:            { type: String, enum: ["paid", "pending", "overdue"], default: "paid" },
-    attendancePercentage: { type: Number, default: 95 },
+    feeStatus:            { type: String, enum: ["paid", "pending", "overdue"], default: "pending" },
+    attendancePercentage: { type: Number, default: 100 },
     status:               { type: String, enum: ["active", "inactive", "alumni", "deleted"], default: "active" },
   },
   { timestamps: true }

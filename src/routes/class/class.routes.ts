@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { verifyToken } from "../../middleware/auth.middleware";
+import { checkRole } from "../../middleware/rbac.middleware";
 import { validate } from "../../middleware/validate.middleware";
 import {
   createClass,
@@ -22,15 +23,15 @@ router.use(verifyToken);
 
 router
   .route("/")
-  .get(getAllClasses)
-  .post(validate("body", createClassValidator), createClass);
+  .get(checkRole("owner", "admin", "teacher", "student", "parent"), getAllClasses)
+  .post(checkRole("owner", "admin"), validate("body", createClassValidator), createClass);
 
-router.post("/shift-students", validate("body", shiftStudentsValidator), shiftStudents);
+router.post("/shift-students", checkRole("owner", "admin"), validate("body", shiftStudentsValidator), shiftStudents);
 
 router
   .route("/:id")
-  .get(getClassById)
-  .put(validate("body", updateClassValidator), updateClass)
-  .delete(deleteClass);
+  .get(checkRole("owner", "admin", "teacher", "student", "parent"), getClassById)
+  .put(checkRole("owner", "admin"), validate("body", updateClassValidator), updateClass)
+  .delete(checkRole("owner", "admin"), deleteClass);
 
 export default router;

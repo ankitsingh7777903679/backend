@@ -50,36 +50,121 @@ export const feeService = {
     };
   },
 
+  getStudentLedger: async (studentId: string, instituteId: string) => {
+    const student = await Student.findOne({ _id: studentId, instituteId });
+    if (!student) throw new AppError("Student profile not found", 404);
+
+    const pastFees = await Fee.find({ studentId: student._id, instituteId }).sort({ createdAt: -1 });
+    // Use the latest past fee document's dueAmount as current carried-forward arrears to prevent double-counting
+    const previousArrears = pastFees.length > 0 ? (pastFees[0].dueAmount || 0) : 0;
+
+    const monthlyFee = student.monthlyFee || 0;
+    const oneTimeRegistrationFee = student.oneTimeRegistrationFee || 0;
+    const discountAmount = student.discountAmount || 0;
+
+    const netPayable = Math.max(0, monthlyFee + previousArrears + oneTimeRegistrationFee - discountAmount);
+
+    return {
+      student: {
+        id: student._id,
+        name: student.name,
+        admissionNo: student.admissionNo,
+        batchName: student.batchName || student.schoolClass || "General Class",
+        joiningDate: student.joiningDate || student.createdAt,
+        monthlyFee,
+        oneTimeRegistrationFee,
+        discountAmount,
+        discountReason: student.discountReason,
+      },
+      previousArrears,
+      netPayable,
+      pastFeeRecords: pastFees,
+    };
+  },
+
   recordPayment: async (data: RecordFeeInput, instituteId: string, userId?: string) => {
     const receiptNo = await generateReceiptNo(instituteId);
-    const dueAmount = Math.max(0, data.totalAmount - data.paidAmount);
-
-    let feeStatus: "paid" | "pending" | "overdue";
-    if (dueAmount === 0) {
-      feeStatus = "paid";
-    } else if (data.dueDate) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const feeDueDate = new Date(data.dueDate);
-      feeStatus = feeDueDate < today ? "overdue" : "pending";
-    } else {
-      feeStatus = "pending";
-    }
-
     const safeUserId = userId && Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : undefined;
 
-    const fee = await Fee.create({
-      ...data,
-      instituteId,
+    const newTransaction = {
       receiptNo,
-      dueAmount,
-      feeStatus,
+      amount: data.paidAmount,
+      paymentMethod: data.paymentMethod,
+      transactionId: data.transactionId,
+      paymentDate: new Date(),
+      remarks: data.remarks,
       recordedByUserId: safeUserId,
+    };
+
+    let existingFee = await Fee.findOne({
+      studentId: data.studentId,
+      month: data.month,
+      instituteId,
     });
+
+    let fee;
+
+    if (existingFee) {
+      const updatedPaid = (existingFee.paidAmount || 0) + data.paidAmount;
+      const totalAmount = data.totalAmount || existingFee.totalAmount;
+      const previousArrears = data.previousArrears ?? existingFee.previousArrears ?? 0;
+      const discountApplied = data.discountApplied ?? existingFee.discountApplied ?? 0;
+      const netPayable = Math.max(0, totalAmount + previousArrears - discountApplied);
+      const dueAmount = Math.max(0, netPayable - updatedPaid);
+
+      let feeStatus: "paid" | "partial" | "pending" | "overdue";
+      if (dueAmount === 0) {
+        feeStatus = "paid";
+      } else if (updatedPaid > 0) {
+        feeStatus = "partial";
+      } else {
+        feeStatus = "pending";
+      }
+
+      existingFee.paidAmount = updatedPaid;
+      existingFee.dueAmount = dueAmount;
+      existingFee.feeStatus = feeStatus;
+      existingFee.netPayable = netPayable;
+      if (!existingFee.transactions) existingFee.transactions = [];
+      existingFee.transactions.push(newTransaction);
+      existingFee.receiptNo = receiptNo; // Latest receipt
+      existingFee.paymentMethod = data.paymentMethod;
+
+      fee = await existingFee.save();
+    } else {
+      const previousArrears = data.previousArrears || 0;
+      const discountApplied = data.discountApplied || 0;
+      const registrationFeeApplied = data.registrationFeeApplied || 0;
+      const netPayable = Math.max(0, data.totalAmount + previousArrears + registrationFeeApplied - discountApplied);
+      const dueAmount = Math.max(0, netPayable - data.paidAmount);
+
+      let feeStatus: "paid" | "partial" | "pending" | "overdue";
+      if (dueAmount === 0) {
+        feeStatus = "paid";
+      } else if (data.paidAmount > 0) {
+        feeStatus = "partial";
+      } else {
+        feeStatus = "pending";
+      }
+
+      fee = await Fee.create({
+        ...data,
+        instituteId,
+        receiptNo,
+        previousArrears,
+        discountApplied,
+        registrationFeeApplied,
+        netPayable,
+        dueAmount,
+        feeStatus,
+        recordedByUserId: safeUserId,
+        transactions: [newTransaction],
+      });
+    }
 
     // Also update Student feeStatus & Trigger Notification
     if (Types.ObjectId.isValid(data.studentId)) {
-      const studentDoc = await Student.findByIdAndUpdate(data.studentId, { feeStatus }, { new: true });
+      const studentDoc = await Student.findOneAndUpdate({ _id: data.studentId, instituteId }, { feeStatus: fee.feeStatus }, { new: true });
       if (studentDoc && studentDoc.userId) {
         notificationService
           .sendFeePaidNotification(

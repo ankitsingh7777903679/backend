@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface IInstitute extends Document {
+  code: string; // Unique 8-character Institute Code (e.g. "TP849201")
   name: string;
   ownerName: string;
   phone: string;
@@ -18,6 +19,7 @@ export interface IInstitute extends Document {
 
 const instituteSchema = new Schema<IInstitute>(
   {
+    code:             { type: String, required: true, uppercase: true, trim: true },
     name:             { type: String, required: true, trim: true },
     ownerName:        { type: String, required: true, trim: true },
     phone:            { type: String, required: true },
@@ -33,6 +35,7 @@ const instituteSchema = new Schema<IInstitute>(
   { timestamps: true }
 );
 
+instituteSchema.index({ code: 1 }, { unique: true });
 instituteSchema.index({ email: 1 }, { unique: true });
 instituteSchema.index({ phone: 1 });
 instituteSchema.index({ status: 1 });

@@ -1,4 +1,4 @@
-import { Response } from "express";
+import { Request, Response } from "express";
 import { catchAsync } from "../../utils/catchAsync";
 import { apiResponse } from "../../utils/apiResponse";
 import { Student } from "../../models/student/student.model";
@@ -6,7 +6,7 @@ import { Class } from "../../models/class/class.model";
 import { Fee } from "../../models/fee/fee.model";
 import { Exam } from "../../models/exam/exam.model";
 
-export const getDashboardStats = catchAsync(async (req: any, res: Response) => {
+export const getDashboardStats = catchAsync(async (req: Request, res: Response) => {
   const instituteId = req.user.instituteId;
 
   // 1. Total Enrolled Students

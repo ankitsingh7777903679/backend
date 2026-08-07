@@ -12,8 +12,13 @@ export const verifyToken = catchAsync(async (req: Request, res: Response, next: 
 
   const token = authHeader.split(" ")[1];
 
+  const secret = process.env.JWT_ACCESS_SECRET;
+  if (!secret) {
+    throw new AppError("JWT Access Secret not configured in environment.", 500);
+  }
+
   try {
-    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET || "access_secret") as JWTPayload;
+    const decoded = jwt.verify(token, secret) as JWTPayload;
     req.user = decoded;
     next();
   } catch {
