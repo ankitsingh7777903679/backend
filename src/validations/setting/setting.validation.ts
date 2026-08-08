@@ -9,6 +9,12 @@ export const updateSettingSchema = z.object({
   smsEnabled:             z.boolean().optional(),
   attendanceReminderTime: z.string().optional(),
   feeReminderDaysBefore:  z.number().optional(),
+  upiId:                  z.string().optional(),
+  payeeName:              z.string().optional(),
+  upiNote:                z.string().optional(),
+  lateFeePerDay:          z.number().optional(),
+  dueDayOfMonth:          z.number().optional(),
+  graceDays:              z.number().optional(),
 });
 
 export type UpdateSettingInput = z.infer<typeof updateSettingSchema>;

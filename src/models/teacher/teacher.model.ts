@@ -13,6 +13,7 @@ export interface ITeacher extends Document {
   joiningDate?: Date;
   photo?: string;
   assignedBatchIds: Types.ObjectId[];
+  permissions?: string[];
   status: "active" | "inactive" | "deleted";
   createdAt: Date;
   updatedAt: Date;
@@ -32,6 +33,18 @@ const teacherSchema = new Schema<ITeacher>(
     joiningDate:      { type: Date },
     photo:            { type: String },
     assignedBatchIds: [{ type: Schema.Types.ObjectId, ref: "Batch" }],
+    permissions:      [{
+      type: String,
+      default: [
+        "manage_students",
+        "mark_attendance",
+        "manage_classes",
+        "manage_homework",
+        "manage_materials",
+        "manage_tests",
+        "view_student_reports"
+      ]
+    }],
     status:           { type: String, enum: ["active", "inactive", "deleted"], default: "active" },
   },
   { timestamps: true }

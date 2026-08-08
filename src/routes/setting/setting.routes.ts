@@ -8,7 +8,7 @@ const router = Router();
 router.use(verifyToken);
 
 router.route("/")
-  .get(checkRole("owner", "admin"), settingController.getSetting)
+  .get(checkRole("owner", "admin", "teacher", "student", "parent", "accountant"), settingController.getSetting)
   .put(checkRole("owner", "admin"), settingController.updateSetting);
 
 export default router;

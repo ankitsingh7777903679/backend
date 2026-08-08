@@ -9,6 +9,7 @@ export interface IUser extends Document {
   passwordHash: string;
   photo?: string;
   linkedId?: Types.ObjectId; // ObjectId ref to Student or Teacher model
+  permissions?: string[];
   status: "active" | "inactive" | "deleted";
   refreshToken?: string;
   lastLogin?: Date;
@@ -26,6 +27,7 @@ const userSchema = new Schema<IUser>(
     passwordHash: { type: String, required: true },
     photo:        { type: String },
     linkedId:     { type: Schema.Types.ObjectId },
+    permissions:  [{ type: String }],
     status:       { type: String, enum: ["active", "inactive", "deleted"], default: "active" },
     refreshToken: { type: String },
     lastLogin:    { type: Date },

@@ -4,7 +4,7 @@ import { catchAsync } from "../../utils/catchAsync";
 import { apiResponse } from "../../utils/apiResponse";
 
 export const getAllStudents = catchAsync(async (req: Request, res: Response) => {
-  const students = await studentService.getAll(req.user.instituteId, req.query as { search?: string; batch?: string; feeStatus?: string });
+  const students = await studentService.getAll(req.user.instituteId, req.query as { search?: string; batch?: string; feeStatus?: string }, req.user);
   res.json(apiResponse.success(students, "Students fetched successfully"));
 });
 

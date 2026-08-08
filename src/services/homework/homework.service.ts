@@ -1,12 +1,23 @@
 import { Homework } from "../../models/homework/homework.model";
 import { HomeworkSubmission } from "../../models/homeworkSubmission/homeworkSubmission.model";
+import { Teacher } from "../../models/teacher/teacher.model";
 import { AppError } from "../../utils/AppError";
 import { CreateHomeworkInput } from "../../validations/homework/homework.validation";
 import { Types } from "mongoose";
 
 export const homeworkService = {
-  getAll: async (instituteId: string, query: { search?: string; status?: string }) => {
+  getAll: async (instituteId: string, query: { search?: string; status?: string }, reqUser?: import("../../types/express").JWTPayload) => {
     const filter: Record<string, unknown> = { instituteId, status: { $ne: "deleted" } };
+
+    if (reqUser && reqUser.role === "teacher") {
+      const teacherDoc = await Teacher.findOne({
+        instituteId,
+        $or: [{ userId: reqUser.userId }, { _id: reqUser.userId }],
+        status: { $ne: "deleted" },
+      });
+      const assignedBatchIds = teacherDoc?.assignedBatchIds || [];
+      filter.batchId = { $in: assignedBatchIds };
+    }
 
     if (query.status && query.status !== "all") {
       filter.homeworkStatus = query.status;

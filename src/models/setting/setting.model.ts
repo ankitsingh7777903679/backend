@@ -10,6 +10,12 @@ export interface ISetting extends Document {
   smsEnabled: boolean;
   attendanceReminderTime: string;
   feeReminderDaysBefore: number;
+  upiId?: string;
+  payeeName?: string;
+  upiNote?: string;
+  lateFeePerDay?: number;
+  dueDayOfMonth?: number;
+  graceDays?: number;
   status: "active" | "deleted";
   createdAt: Date;
   updatedAt: Date;
@@ -26,6 +32,12 @@ const settingSchema = new Schema<ISetting>(
     smsEnabled:              { type: Boolean, default: false },
     attendanceReminderTime:  { type: String, default: "10:30 AM" },
     feeReminderDaysBefore:   { type: Number, default: 5 },
+    upiId:                   { type: String, trim: true },
+    payeeName:               { type: String, trim: true },
+    upiNote:                 { type: String, trim: true, default: "Monthly Tuition Fee" },
+    lateFeePerDay:           { type: Number, default: 10 },
+    dueDayOfMonth:           { type: Number, default: 5 },
+    graceDays:               { type: Number, default: 2 },
     status:                  { type: String, enum: ["active", "deleted"], default: "active" },
   },
   { timestamps: true }

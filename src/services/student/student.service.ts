@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import { Student } from "../../models/student/student.model";
 import { User } from "../../models/user/user.model";
 import { Class } from "../../models/class/class.model";
+import { Teacher } from "../../models/teacher/teacher.model";
 import { ExamResult } from "../../models/examResult/examResult.model";
 import { Exam } from "../../models/exam/exam.model";
 import { Institute } from "../../models/institute/institute.model";
@@ -13,11 +14,22 @@ import { notificationService } from "../notification/notification.service";
 import { emailService } from "../email/email.service";
 
 export const studentService = {
-  getAll: async (instituteId: string, query: { search?: string; batch?: string; feeStatus?: string }) => {
+  getAll: async (instituteId: string, query: { search?: string; batch?: string; feeStatus?: string }, reqUser?: import("../../types/express").JWTPayload) => {
     const filter: Record<string, unknown> = {
       instituteId,
       status: { $ne: "deleted" },
     };
+
+    // Class/Batch Scoping for Staff Teachers
+    if (reqUser && reqUser.role === "teacher") {
+      const teacherDoc = await Teacher.findOne({
+        instituteId,
+        $or: [{ userId: reqUser.userId }, { _id: reqUser.userId }],
+        status: { $ne: "deleted" },
+      });
+      const assignedBatchIds = teacherDoc?.assignedBatchIds || [];
+      filter.batchId = { $in: assignedBatchIds };
+    }
 
     // Filter by batch: look up class by name to get _id, then filter by batchId
     // This handles names with special chars like "Class 12 (Science)"
@@ -145,6 +157,18 @@ export const studentService = {
       passwordHash,
     });
 
+    const formattedInstallmentPlan = Array.isArray(data.installmentPlan)
+      ? data.installmentPlan.map((inst: any) => ({
+          installmentNo: Number(inst.installmentNo),
+          title: String(inst.title),
+          amount: Number(inst.amount),
+          dueDate: new Date(inst.dueDate),
+          paidAmount: Number(inst.paidAmount) || 0,
+          dueAmount: Number(inst.dueAmount) || Number(inst.amount),
+          feeStatus: inst.feeStatus || "pending",
+        }))
+      : undefined;
+
     let student;
     try {
       student = await Student.create({
@@ -157,7 +181,12 @@ export const studentService = {
         instituteId,
         userId: user._id,
         feeStatus: "pending",
-        monthlyFee: Number(data.monthlyFee) || 1500,
+        monthlyFee: data.monthlyFee !== undefined && data.monthlyFee !== null ? Number(data.monthlyFee) : 0,
+        feeBillingType: data.feeBillingType || data.billingCycleType || "monthly",
+        billingCycleType: data.feeBillingType || data.billingCycleType || "monthly",
+        totalCourseFee: Number(data.totalCourseFee) || 0,
+        numberOfInstallments: Number(data.numberOfInstallments) || (formattedInstallmentPlan?.length || 1),
+        installmentPlan: formattedInstallmentPlan,
         attendancePercentage: 100,
       });
 
@@ -195,6 +224,35 @@ export const studentService = {
 
   update: async (id: string, data: Partial<CreateStudentInput>, instituteId: string) => {
     const updateData = { ...data } as Record<string, unknown>;
+
+    if (data.monthlyFee !== undefined) {
+      updateData.monthlyFee = Number(data.monthlyFee);
+    }
+    if (data.totalCourseFee !== undefined) {
+      updateData.totalCourseFee = Number(data.totalCourseFee);
+    }
+    if (data.feeBillingType || data.billingCycleType) {
+      const bType = data.feeBillingType || data.billingCycleType;
+      updateData.feeBillingType = bType;
+      updateData.billingCycleType = bType;
+
+      if (bType === "monthly") {
+        updateData.installmentPlan = [];
+        updateData.totalCourseFee = 0;
+        updateData.numberOfInstallments = 0;
+      }
+    }
+    if (data.feeBillingType !== "monthly" && Array.isArray(data.installmentPlan)) {
+      updateData.installmentPlan = data.installmentPlan.map((inst: any) => ({
+        installmentNo: Number(inst.installmentNo),
+        title: String(inst.title),
+        amount: Number(inst.amount),
+        dueDate: new Date(inst.dueDate),
+        paidAmount: Number(inst.paidAmount) || 0,
+        dueAmount: Number(inst.dueAmount) || Number(inst.amount),
+        feeStatus: inst.feeStatus || "pending",
+      }));
+    }
 
     const existingStudent = await Student.findOne({ _id: id, instituteId, status: { $ne: "deleted" } });
     const oldBatchName = existingStudent?.batchName || "";

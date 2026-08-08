@@ -15,7 +15,7 @@ const teacherHwUpload = multer({
 export const teacherHwUploadMiddleware = teacherHwUpload.array("files", 10);
 
 export const getAllHomework = catchAsync(async (req: Request, res: Response) => {
-  const list = await homeworkService.getAll(req.user.instituteId, req.query as { search?: string; status?: string });
+  const list = await homeworkService.getAll(req.user.instituteId, req.query as { search?: string; status?: string }, req.user);
   res.json(apiResponse.success(list, "Homework records fetched successfully"));
 });
 

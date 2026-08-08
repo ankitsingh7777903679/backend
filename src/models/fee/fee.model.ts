@@ -29,7 +29,18 @@ export interface IFee extends Document {
   receiptNo: string;
   paymentDate: Date;
   dueDate?: Date;
-  feeStatus: "paid" | "pending" | "partial" | "overdue";
+  feeStatus: "paid" | "pending" | "partial" | "overdue" | "verification_pending";
+  paymentProofUrl?: string;
+  studentUtrNumber?: string;
+  paymentProofSubmittedAt?: Date;
+  rejectionReason?: string;
+  lateFeeAmount?: number;
+  studentSubmittedAmount?: number;
+  feeType?: "monthly" | "installment" | "lumpsum" | "registration" | "other";
+  installmentNo?: number;
+  installmentName?: string;
+  totalInstallments?: number;
+  installmentId?: Types.ObjectId;
   remarks?: string;
   recordedByUserId?: Types.ObjectId;
   transactions?: IFeeTransaction[];
@@ -56,7 +67,19 @@ const feeSchema = new Schema<IFee>(
     transactionId:         { type: String, trim: true },
     receiptNo:              { type: String, required: true, trim: true },
     paymentDate:            { type: Date, default: Date.now },
-    feeStatus:              { type: String, enum: ["paid", "pending", "partial", "overdue"], default: "pending" },
+    dueDate:                { type: Date },
+    feeStatus:              { type: String, enum: ["paid", "pending", "partial", "overdue", "verification_pending"], default: "pending" },
+    paymentProofUrl:        { type: String, trim: true },
+    studentUtrNumber:       { type: String, trim: true },
+    paymentProofSubmittedAt:{ type: Date },
+    rejectionReason:        { type: String, trim: true },
+    lateFeeAmount:          { type: Number, default: 0 },
+    studentSubmittedAmount: { type: Number, default: 0 },
+    feeType:                { type: String, enum: ["monthly", "installment", "lumpsum", "registration", "other"], default: "monthly" },
+    installmentNo:          { type: Number },
+    installmentName:        { type: String, trim: true },
+    totalInstallments:      { type: Number },
+    installmentId:          { type: Schema.Types.ObjectId },
     remarks:                { type: String, trim: true },
     recordedByUserId:       { type: Schema.Types.ObjectId, ref: "User" },
     transactions: [

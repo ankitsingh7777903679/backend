@@ -1,5 +1,6 @@
 import { Exam } from "../../models/exam/exam.model";
 import { Student } from "../../models/student/student.model";
+import { Teacher } from "../../models/teacher/teacher.model";
 import { ExamResult, IExamResult } from "../../models/examResult/examResult.model";
 import { AppError } from "../../utils/AppError";
 import { CreateExamInput } from "../../validations/exam/exam.validation";
@@ -25,6 +26,17 @@ export const examService = {
         { batchName: { $regex: query.search, $options: "i" } },
         { subject: { $regex: query.search, $options: "i" } },
       ];
+    }
+
+    // If user is a Staff Teacher, filter exams by their assigned batches
+    if (userRole === "teacher" && userId && Types.ObjectId.isValid(userId)) {
+      const teacherDoc = await Teacher.findOne({
+        instituteId: new Types.ObjectId(instituteId),
+        $or: [{ userId: new Types.ObjectId(userId) }, { _id: new Types.ObjectId(userId) }],
+        status: { $ne: "deleted" },
+      });
+      const assignedBatchIds = teacherDoc?.assignedBatchIds || [];
+      filter.batchId = { $in: assignedBatchIds };
     }
 
     // If user is a Student or Parent, strictly filter exams by their assigned batch!

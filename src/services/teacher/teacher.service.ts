@@ -35,7 +35,7 @@ export const teacherService = {
     return teacher;
   },
 
-  create: async (data: CreateTeacherInput & { password?: string }, instituteId: string) => {
+  create: async (data: CreateTeacherInput & { password?: string; permissions?: string[]; assignedBatchIds?: string[] }, instituteId: string) => {
     const existing = await Teacher.findOne({ phone: data.phone, instituteId, status: { $ne: "deleted" } });
     if (existing) {
       throw new AppError("A teacher with this mobile number already exists", 409);
@@ -47,6 +47,17 @@ export const teacherService = {
       : `Tp${data.phone.slice(-4)}@${new Date().getFullYear()}`;
 
     const passwordHash = await bcrypt.hash(finalPassword, 10);
+    const defaultPermissions = [
+      "manage_students",
+      "mark_attendance",
+      "manage_classes",
+      "manage_homework",
+      "manage_materials",
+      "manage_tests",
+      "view_student_reports",
+    ];
+
+    const permissionsToSet = data.permissions && data.permissions.length > 0 ? data.permissions : defaultPermissions;
 
     const user = await User.create({
       instituteId,
@@ -55,6 +66,7 @@ export const teacherService = {
       email: teacherEmail || `${data.phone}@teacher.local`,
       phone: data.phone,
       passwordHash,
+      permissions: permissionsToSet,
     });
 
     const teacher = await Teacher.create({
@@ -62,6 +74,7 @@ export const teacherService = {
       email: teacherEmail,
       instituteId,
       userId: user._id,
+      permissions: permissionsToSet,
     });
 
     user.linkedId = teacher._id as unknown as import("mongoose").Types.ObjectId;
@@ -88,7 +101,7 @@ export const teacherService = {
     return teacher;
   },
 
-  update: async (id: string, data: Partial<CreateTeacherInput & { password?: string }>, instituteId: string) => {
+  update: async (id: string, data: Partial<CreateTeacherInput & { password?: string; permissions?: string[]; assignedBatchIds?: string[] }>, instituteId: string) => {
     const teacher = await Teacher.findOneAndUpdate(
       { _id: id, instituteId },
       { $set: data },
@@ -102,6 +115,7 @@ export const teacherService = {
       if (data.name) userUpdate.name = data.name;
       if (data.phone) userUpdate.phone = data.phone;
       if (data.email) userUpdate.email = data.email.trim().toLowerCase();
+      if (data.permissions) userUpdate.permissions = data.permissions;
       if (data.password && data.password.trim().length >= 6) {
         userUpdate.passwordHash = await bcrypt.hash(data.password.trim(), 10);
       }

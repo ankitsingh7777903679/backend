@@ -10,6 +10,8 @@ export const createTeacherSchema = z.object({
   experienceYears: z.number().min(0, "Experience years must be positive"),
   employmentType:  z.enum(["full_time", "part_time", "guest"]).default("full_time"),
   photo:           z.string().optional(),
+  assignedBatchIds: z.array(z.string()).optional(),
+  permissions:     z.array(z.string()).optional(),
 });
 
 export const updateTeacherSchema = createTeacherSchema.partial();

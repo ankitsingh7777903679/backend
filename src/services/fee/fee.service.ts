@@ -162,23 +162,215 @@ export const feeService = {
       });
     }
 
-    // Also update Student feeStatus & Trigger Notification
+    // Also update Student feeStatus, installmentPlan & Trigger Notification
     if (Types.ObjectId.isValid(data.studentId)) {
-      const studentDoc = await Student.findOneAndUpdate({ _id: data.studentId, instituteId }, { feeStatus: fee.feeStatus }, { new: true });
-      if (studentDoc && studentDoc.userId) {
-        notificationService
-          .sendFeePaidNotification(
-            instituteId,
-            studentDoc._id,
-            studentDoc.userId,
-            data.paidAmount,
-            receiptNo,
-            data.month
-          )
-          .catch(() => {});
+      const studentDoc = await Student.findOne({ _id: data.studentId, instituteId });
+      if (studentDoc) {
+        studentDoc.feeStatus = fee.feeStatus;
+        if (studentDoc.installmentPlan && studentDoc.installmentPlan.length > 0 && (data.feeType === "installment" || data.installmentNo)) {
+          const instNo = data.installmentNo || 1;
+          const instIndex = studentDoc.installmentPlan.findIndex((i) => i.installmentNo === instNo);
+          if (instIndex !== -1) {
+            const inst = studentDoc.installmentPlan[instIndex];
+            const updatedInstPaid = (inst.paidAmount || 0) + data.paidAmount;
+            const updatedInstDue = Math.max(0, inst.amount - updatedInstPaid);
+            inst.paidAmount = updatedInstPaid;
+            inst.dueAmount = updatedInstDue;
+            inst.feeStatus = updatedInstDue === 0 ? "paid" : updatedInstPaid > 0 ? "partial" : "pending";
+          }
+        }
+        await studentDoc.save();
+
+        if (studentDoc.userId) {
+          notificationService
+            .sendFeePaidNotification(
+              instituteId,
+              studentDoc._id,
+              studentDoc.userId,
+              data.paidAmount,
+              receiptNo,
+              data.month
+            )
+            .catch(() => {});
+        }
       }
     }
 
     return fee;
+  },
+
+  submitPaymentProof: async (
+    feeId: string,
+    data: { paymentProofUrl: string; studentUtrNumber: string; lateFeeAmount?: number; studentSubmittedAmount?: number },
+    studentUserId: string,
+    instituteId: string
+  ) => {
+    let fee = await Fee.findOne({ _id: feeId, instituteId });
+    if (!fee) {
+      throw new AppError("Fee record not found", 404);
+    }
+
+    fee.paymentProofUrl = data.paymentProofUrl;
+    fee.studentUtrNumber = data.studentUtrNumber;
+    fee.paymentProofSubmittedAt = new Date();
+    fee.feeStatus = "verification_pending";
+    if (data.studentSubmittedAmount && data.studentSubmittedAmount > 0) {
+      fee.studentSubmittedAmount = data.studentSubmittedAmount;
+    }
+    if (data.lateFeeAmount) {
+      fee.lateFeeAmount = data.lateFeeAmount;
+      fee.totalAmount = (fee.totalAmount || 1500) + data.lateFeeAmount;
+      fee.netPayable = fee.totalAmount;
+      fee.dueAmount = Math.max(0, fee.netPayable - (fee.paidAmount || 0));
+    }
+
+    await fee.save();
+    return fee;
+  },
+
+  approvePaymentProof: async (
+    feeId: string,
+    teacherUserId: string,
+    instituteId: string,
+    approvedAmountInput?: number
+  ) => {
+    const fee = await Fee.findOne({ _id: feeId, instituteId });
+    if (!fee) throw new AppError("Fee record not found", 404);
+    if (fee.feeStatus !== "verification_pending") {
+      throw new AppError("Fee is not pending verification", 400);
+    }
+
+    const receiptNo = await generateReceiptNo(instituteId);
+    
+    // Determine exact amount being approved (custom approved amount > student submitted amount > remaining due amount > total amount)
+    const amountToApprove =
+      approvedAmountInput && approvedAmountInput > 0
+        ? approvedAmountInput
+        : fee.studentSubmittedAmount && fee.studentSubmittedAmount > 0
+        ? fee.studentSubmittedAmount
+        : fee.dueAmount > 0
+        ? fee.dueAmount
+        : fee.totalAmount;
+
+    const newPaidAmount = (fee.paidAmount || 0) + amountToApprove;
+    const netTotal = fee.netPayable || fee.totalAmount;
+    const newDueAmount = Math.max(0, netTotal - newPaidAmount);
+    const newStatus: "paid" | "partial" = newDueAmount === 0 ? "paid" : "partial";
+
+    fee.paidAmount = newPaidAmount;
+    fee.dueAmount = newDueAmount;
+    fee.feeStatus = newStatus;
+    fee.receiptNo = receiptNo;
+    fee.paymentMethod = "upi";
+    fee.transactionId = fee.studentUtrNumber;
+    fee.paymentDate = new Date();
+    fee.recordedByUserId = Types.ObjectId.isValid(teacherUserId) ? new Types.ObjectId(teacherUserId) : undefined;
+
+    const newTransaction = {
+      receiptNo,
+      amount: amountToApprove,
+      paymentMethod: "upi" as const,
+      transactionId: fee.studentUtrNumber,
+      paymentDate: new Date(),
+      remarks: newStatus === "paid" ? "Approved online UPI payment proof (Full)" : `Approved online UPI payment proof (Partial ₹${amountToApprove})`,
+      recordedByUserId: fee.recordedByUserId,
+    };
+
+    if (!fee.transactions) fee.transactions = [];
+    fee.transactions.push(newTransaction);
+
+    await fee.save();
+
+    // Update Student feeStatus
+    await Student.findOneAndUpdate({ _id: fee.studentId, instituteId }, { feeStatus: newStatus });
+
+    return fee;
+  },
+
+  rejectPaymentProof: async (feeId: string, rejectionReason: string, instituteId: string) => {
+    const fee = await Fee.findOne({ _id: feeId, instituteId });
+    if (!fee) throw new AppError("Fee record not found", 404);
+
+    const prevPaid = fee.paidAmount || 0;
+    fee.feeStatus = prevPaid > 0 ? "partial" : "pending";
+    fee.rejectionReason = rejectionReason || "Payment proof rejected by institute";
+    await fee.save();
+
+    return fee;
+  },
+
+  getPendingProofs: async (instituteId: string) => {
+    const pendingProofs = await Fee.find({ instituteId, feeStatus: "verification_pending" }).sort({ paymentProofSubmittedAt: -1 });
+    return pendingProofs;
+  },
+
+  setupInstallmentPlan: async (
+    studentId: string,
+    instituteId: string,
+    data: {
+      totalCourseFee: number;
+      numberOfInstallments: number;
+      installmentPlan: Array<{
+        installmentNo: number;
+        title: string;
+        amount: number;
+        dueDate: string | Date;
+        remarks?: string;
+      }>;
+    }
+  ) => {
+    const student = await Student.findOne({ _id: studentId, instituteId });
+    if (!student) throw new AppError("Student profile not found", 404);
+
+    const formattedPlan = data.installmentPlan.map((item) => ({
+      installmentNo: item.installmentNo,
+      title: item.title,
+      amount: item.amount,
+      dueDate: new Date(item.dueDate),
+      paidAmount: 0,
+      dueAmount: item.amount,
+      feeStatus: "pending" as const,
+      remarks: item.remarks,
+    }));
+
+    student.feeBillingType = "installment";
+    student.billingCycleType = "installment";
+    student.totalCourseFee = data.totalCourseFee;
+    student.numberOfInstallments = data.numberOfInstallments;
+    student.installmentPlan = formattedPlan;
+
+    await student.save();
+    return student;
+  },
+
+  getInstallmentPlan: async (studentId: string, instituteId: string) => {
+    const student = await Student.findOne({ _id: studentId, instituteId });
+    if (!student) throw new AppError("Student profile not found", 404);
+
+    const pastFees = await Fee.find({ studentId: student._id, instituteId, feeType: "installment" }).sort({ createdAt: -1 });
+
+    const totalCourseFee = student.totalCourseFee || 0;
+    const plan = student.installmentPlan || [];
+    const totalPaid = plan.reduce((acc, curr) => acc + (curr.paidAmount || 0), 0);
+    const totalRemainingDue = Math.max(0, totalCourseFee - totalPaid);
+
+    return {
+      student: {
+        id: student._id,
+        name: student.name,
+        admissionNo: student.admissionNo,
+        batchName: student.batchName,
+        feeBillingType: student.feeBillingType || "installment",
+        totalCourseFee,
+        numberOfInstallments: student.numberOfInstallments || plan.length,
+      },
+      summary: {
+        totalCourseFee,
+        totalPaid,
+        totalRemainingDue,
+      },
+      installmentPlan: plan,
+      feeRecords: pastFees,
+    };
   },
 };

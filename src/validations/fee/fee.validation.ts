@@ -15,6 +15,26 @@ export const recordFeeSchema = z.object({
   dueDate:       z.string().optional(),
   transactionId: z.string().optional(),
   remarks:       z.string().optional(),
+  feeType:       z.enum(["monthly", "installment", "lumpsum", "registration", "other"]).optional(),
+  installmentNo: z.number().optional(),
+  installmentName: z.string().optional(),
+  totalInstallments: z.number().optional(),
 });
 
 export type RecordFeeInput = z.infer<typeof recordFeeSchema>;
+
+export const setupInstallmentPlanSchema = z.object({
+  totalCourseFee: z.number().min(0, "Total course fee must be positive"),
+  numberOfInstallments: z.number().int().min(2).max(10),
+  installmentPlan: z.array(
+    z.object({
+      installmentNo: z.number().int().min(1),
+      title: z.string().min(1, "Title is required"),
+      amount: z.number().min(0, "Amount must be positive"),
+      dueDate: z.string().or(z.date()),
+      remarks: z.string().optional(),
+    })
+  ).min(2),
+});
+
+export type SetupInstallmentPlanInput = z.infer<typeof setupInstallmentPlanSchema>;

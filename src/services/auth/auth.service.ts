@@ -25,6 +25,7 @@ export const authService = {
       userId: user._id ? user._id.toString() : "",
       instituteId: user.instituteId ? user.instituteId.toString() : "",
       role: user.role,
+      permissions: user.permissions || [],
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -277,14 +278,23 @@ export const authService = {
         authenticatedUser.name = studentDoc.name;
         await authenticatedUser.save();
       }
-    } else if (authenticatedUser.role === "teacher" && !authenticatedUser.linkedId) {
+    } else if (authenticatedUser.role === "teacher") {
       const teacherDoc = await Teacher.findOne({
         instituteId: authenticatedUser.instituteId,
-        $or: [{ phone: authenticatedUser.phone }, { email: authenticatedUser.email }],
+        $or: [{ _id: authenticatedUser.linkedId }, { phone: authenticatedUser.phone }, { email: authenticatedUser.email }],
         status: { $ne: "deleted" },
       });
       if (teacherDoc) {
-        authenticatedUser.linkedId = teacherDoc._id;
+        if (!authenticatedUser.linkedId) authenticatedUser.linkedId = teacherDoc._id;
+        authenticatedUser.permissions = teacherDoc.permissions || [
+          "manage_students",
+          "mark_attendance",
+          "manage_classes",
+          "manage_homework",
+          "manage_materials",
+          "manage_tests",
+          "view_student_reports",
+        ];
         await authenticatedUser.save();
       }
     }

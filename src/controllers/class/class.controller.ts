@@ -17,7 +17,7 @@ export const createClass = catchAsync(async (req: any, res: Response) => {
 });
 
 export const getAllClasses = catchAsync(async (req: any, res: Response) => {
-  const classes = await classService.getAll(req.user.instituteId);
+  const classes = await classService.getAll(req.user.instituteId, req.user);
   res.status(200).json(apiResponse.success(classes, "Classes fetched successfully"));
 });
 

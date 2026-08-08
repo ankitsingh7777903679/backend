@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { Class, IClass } from "../../models/class/class.model";
 import { Student } from "../../models/student/student.model";
+import { Teacher } from "../../models/teacher/teacher.model";
 import { AppError } from "../../utils/AppError";
 import { CreateClassInput, UpdateClassInput, ShiftStudentsInput } from "../../validations/class/class.validation";
 
@@ -18,8 +19,20 @@ export const classService = {
     return newClass;
   },
 
-  getAll: async (instituteId: string) => {
-    const classes = await Class.find({ instituteId, status: { $ne: "deleted" } }).sort({ createdAt: -1 });
+  getAll: async (instituteId: string, reqUser?: import("../../types/express").JWTPayload) => {
+    const filter: Record<string, unknown> = { instituteId, status: { $ne: "deleted" } };
+
+    if (reqUser && reqUser.role === "teacher") {
+      const teacherDoc = await Teacher.findOne({
+        instituteId,
+        $or: [{ userId: reqUser.userId }, { _id: reqUser.userId }],
+        status: { $ne: "deleted" },
+      });
+      const assignedBatchIds = teacherDoc?.assignedBatchIds || [];
+      filter._id = { $in: assignedBatchIds };
+    }
+
+    const classes = await Class.find(filter).sort({ createdAt: -1 });
 
     // Calculate real student counts for each class
     const classesWithCounts = await Promise.all(

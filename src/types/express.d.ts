@@ -4,6 +4,7 @@ export interface JWTPayload {
   role: "super_admin" | "owner" | "admin" | "teacher" | "accountant" | "student" | "parent";
   email?: string;
   name?: string;
+  permissions?: string[];
 }
 
 declare global {
