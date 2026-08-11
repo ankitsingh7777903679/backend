@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { feeService } from "../../services/fee/fee.service";
 import { catchAsync } from "../../utils/catchAsync";
 import { apiResponse } from "../../utils/apiResponse";
+import { resolveStudentAccess } from "../../utils/accessControl";
 
 export const getAllFees = catchAsync(async (req: Request, res: Response) => {
   const result = await feeService.getAll(
@@ -17,7 +18,7 @@ export const recordFeePayment = catchAsync(async (req: Request, res: Response) =
 });
 
 export const getStudentLedger = catchAsync(async (req: Request, res: Response) => {
-  const studentId = String(req.params.studentId);
+  const studentId = await resolveStudentAccess(req.user, req.user.instituteId, String(req.params.studentId));
   const ledger = await feeService.getStudentLedger(studentId, req.user.instituteId);
   res.json(apiResponse.success(ledger, "Student fee ledger and carry-forward arrears fetched"));
 });
@@ -28,7 +29,8 @@ export const submitPaymentProof = catchAsync(async (req: Request, res: Response)
     feeId,
     { paymentProofUrl, studentUtrNumber, lateFeeAmount, studentSubmittedAmount },
     req.user.userId,
-    req.user.instituteId
+    req.user.instituteId,
+    req.user.role === "student"
   );
   res.json(apiResponse.success(result, "Payment proof submitted successfully. Pending teacher verification."));
 });
@@ -64,7 +66,7 @@ export const setupInstallmentPlan = catchAsync(async (req: Request, res: Respons
 });
 
 export const getInstallmentPlan = catchAsync(async (req: Request, res: Response) => {
-  const studentId = String(req.params.studentId);
+  const studentId = await resolveStudentAccess(req.user, req.user.instituteId, String(req.params.studentId));
   const result = await feeService.getInstallmentPlan(studentId, req.user.instituteId);
   res.json(apiResponse.success(result, "Student installment plan retrieved"));
 });

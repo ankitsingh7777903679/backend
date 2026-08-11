@@ -10,7 +10,7 @@ const router = Router();
 router.use(verifyToken);
 
 router.route("/:examId/results")
-  .get(checkRole("owner", "admin", "teacher", "student", "parent"), examResultController.getResultsByExam)
+  .get(checkRole("owner", "admin", "teacher"), examResultController.getResultsByExam)
   .post(checkRole("owner", "admin", "teacher"), validate("body", submitExamResultsSchema), examResultController.submitResults);
 
 export default router;

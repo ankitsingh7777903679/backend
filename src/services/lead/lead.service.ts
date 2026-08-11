@@ -1,8 +1,6 @@
 import { Lead } from "../../models/lead/lead.model";
 import { Student } from "../../models/student/student.model";
-import { User } from "../../models/user/user.model";
 import { generateAdmissionNo } from "../../utils/generateAdmissionNo";
-import bcrypt from "bcrypt";
 import { AppError } from "../../utils/AppError";
 import { CreateLeadInput } from "../../validations/lead/lead.validation";
 
@@ -68,20 +66,8 @@ export const leadService = {
     }
 
     const admissionNo = await generateAdmissionNo(instituteId);
-    const passwordHash = await bcrypt.hash("Student@123", 10);
-
-    const user = await User.create({
-      instituteId,
-      role: "student",
-      name: lead.name,
-      email: lead.email || `${admissionNo.toLowerCase()}@coaching.local`,
-      phone: lead.phone,
-      passwordHash,
-    });
-
     const student = await Student.create({
       instituteId,
-      userId: user._id,
       admissionNo,
       firstName: lead.name.split(" ")[0] || lead.name,
       lastName: lead.name.split(" ").slice(1).join(" ") || "Student",
@@ -92,11 +78,9 @@ export const leadService = {
       parentPhone: lead.parentPhone || lead.phone,
       batchName: lead.courseInterested,
       feeStatus: "pending",
+      portalAccess: "disabled",
       attendancePercentage: 100,
     });
-
-    user.linkedId = student._id as unknown as import("mongoose").Types.ObjectId;
-    await user.save();
 
     lead.pipelineStage = "converted";
     lead.convertedStudentId = student._id as unknown as import("mongoose").Types.ObjectId;

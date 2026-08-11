@@ -42,8 +42,8 @@ const attendance_validation_1 = require("../../validations/attendance/attendance
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.verifyToken);
 router.route("/")
-    .get((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant", "parent", "student"), attendanceController.getAllAttendance)
+    .get((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), attendanceController.getAllAttendance)
     .post((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), (0, validate_middleware_1.validate)("body", attendance_validation_1.markAttendanceSchema), attendanceController.markAttendance);
 router.get("/batch", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), attendanceController.getBatchAttendance);
-router.get("/my-history", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "student", "parent"), attendanceController.getMyAttendanceHistory);
+router.get("/my-history", (0, rbac_middleware_1.checkRole)("student"), attendanceController.getMyAttendanceHistory);
 exports.default = router;

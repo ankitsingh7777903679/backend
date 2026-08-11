@@ -13,7 +13,7 @@ exports.getTeacher = (0, catchAsync_1.catchAsync)(async (req, res) => {
     res.json(apiResponse_1.apiResponse.success(teacher));
 });
 exports.createTeacher = (0, catchAsync_1.catchAsync)(async (req, res) => {
-    const teacher = await teacher_service_1.teacherService.create(req.body, req.user.instituteId);
+    const teacher = await teacher_service_1.teacherService.create(req.body, req.user.instituteId, req.user.userId);
     res.status(201).json(apiResponse_1.apiResponse.success(teacher, "Teacher created successfully"));
 });
 exports.updateTeacher = (0, catchAsync_1.catchAsync)(async (req, res) => {

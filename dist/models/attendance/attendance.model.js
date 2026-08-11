@@ -44,7 +44,7 @@ const attendanceRecordSchema = new mongoose_1.Schema({
 }, { _id: false });
 const attendanceSchema = new mongoose_1.Schema({
     instituteId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Institute", required: true, index: true },
-    batchId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Batch", required: true, index: true },
+    batchId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Class", required: true, index: true },
     batchName: { type: String, required: true },
     date: { type: Date, required: true },
     dateStr: { type: String, required: true, index: true },

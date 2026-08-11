@@ -10,10 +10,10 @@ const router = Router();
 router.use(verifyToken);
 
 router.route("/")
-  .get(checkRole("owner", "admin", "teacher", "accountant", "parent", "student"), attendanceController.getAllAttendance)
+  .get(checkRole("owner", "admin", "teacher", "accountant"), attendanceController.getAllAttendance)
   .post(checkRole("owner", "admin", "teacher"), validate("body", markAttendanceSchema), attendanceController.markAttendance);
 
 router.get("/batch", checkRole("owner", "admin", "teacher"), attendanceController.getBatchAttendance);
-router.get("/my-history", checkRole("owner", "admin", "teacher", "student", "parent"), attendanceController.getMyAttendanceHistory);
+router.get("/my-history", checkRole("student"), attendanceController.getMyAttendanceHistory);
 
 export default router;

@@ -40,6 +40,6 @@ const rbac_middleware_1 = require("../../middleware/rbac.middleware");
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.verifyToken);
 router.route("/")
-    .get((0, rbac_middleware_1.checkRole)("owner", "admin"), settingController.getSetting)
+    .get((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "student", "parent", "accountant"), settingController.getSetting)
     .put((0, rbac_middleware_1.checkRole)("owner", "admin"), settingController.updateSetting);
 exports.default = router;

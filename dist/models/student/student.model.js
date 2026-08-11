@@ -38,6 +38,7 @@ const mongoose_1 = __importStar(require("mongoose"));
 const studentSchema = new mongoose_1.Schema({
     instituteId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Institute", required: true, index: true },
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User" },
+    portalAccess: { type: String, enum: ["disabled", "invited", "active"], default: "disabled" },
     admissionNo: { type: String, required: true, trim: true },
     firstName: { type: String, required: true, trim: true },
     lastName: { type: String, required: true, trim: true },
@@ -46,21 +47,44 @@ const studentSchema = new mongoose_1.Schema({
     email: { type: String, lowercase: true, trim: true },
     gender: { type: String, enum: ["male", "female", "other"], default: "male" },
     dob: { type: Date },
+    joiningDate: { type: Date, default: Date.now },
+    billingCycleType: { type: String, enum: ["monthly", "installment", "lumpsum"], default: "monthly" },
+    feeBillingType: { type: String, enum: ["monthly", "installment", "lumpsum"], default: "monthly" },
+    totalCourseFee: { type: Number, default: 0 },
+    numberOfInstallments: { type: Number, default: 1 },
+    installmentPlan: [
+        {
+            installmentNo: { type: Number, required: true },
+            title: { type: String, required: true, trim: true },
+            amount: { type: Number, required: true },
+            dueDate: { type: Date, required: true },
+            paidAmount: { type: Number, default: 0 },
+            dueAmount: { type: Number, default: 0 },
+            feeStatus: { type: String, enum: ["paid", "pending", "partial", "overdue", "verification_pending"], default: "pending" },
+            paidDate: { type: Date },
+            receiptNo: { type: String, trim: true },
+            transactionId: { type: String, trim: true },
+        },
+    ],
+    oneTimeRegistrationFee: { type: Number, default: 0 },
+    discountAmount: { type: Number, default: 0 },
+    discountReason: { type: String, trim: true },
     parentName: { type: String, required: true, trim: true },
     parentPhone: { type: String, required: true, trim: true },
-    batchId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Batch" },
+    batchId: { type: mongoose_1.Schema.Types.ObjectId, ref: "Class" },
     batchName: { type: String, trim: true, default: "General Class" },
     schoolName: { type: String, trim: true, default: "" },
     schoolClass: { type: String, trim: true, default: "" },
-    monthlyFee: { type: Number, default: 1500 },
-    timing: { type: String, trim: true, default: "05:00 PM" },
+    monthlyFee: { type: Number, default: 0 },
+    timing: { type: String, trim: true, default: "" },
     address: { type: String, trim: true },
     photo: { type: String },
-    feeStatus: { type: String, enum: ["paid", "pending", "overdue"], default: "paid" },
-    attendancePercentage: { type: Number, default: 95 },
+    feeStatus: { type: String, enum: ["paid", "pending", "partial", "overdue", "verification_pending"], default: "pending" },
+    attendancePercentage: { type: Number, default: 100 },
     status: { type: String, enum: ["active", "inactive", "alumni", "deleted"], default: "active" },
 }, { timestamps: true });
 studentSchema.index({ instituteId: 1, status: 1 });
 studentSchema.index({ instituteId: 1, phone: 1 });
 studentSchema.index({ instituteId: 1, admissionNo: 1 }, { unique: true });
+studentSchema.index({ userId: 1 }, { unique: true, sparse: true });
 exports.Student = mongoose_1.default.model("Student", studentSchema);

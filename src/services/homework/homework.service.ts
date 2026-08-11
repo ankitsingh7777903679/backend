@@ -38,6 +38,7 @@ export const homeworkService = {
       homeworks.map(async (hw) => {
         const realSubmissionCount = await HomeworkSubmission.countDocuments({
           homeworkId: hw._id,
+          instituteId,
           status: "active",
         });
         return {
@@ -55,6 +56,7 @@ export const homeworkService = {
     if (!homework) throw new AppError("Homework record not found", 404);
     const realSubmissionCount = await HomeworkSubmission.countDocuments({
       homeworkId: homework._id,
+      instituteId,
       status: "active",
     });
     return { ...homework, totalSubmissions: realSubmissionCount };

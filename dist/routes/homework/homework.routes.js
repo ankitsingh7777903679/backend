@@ -35,17 +35,31 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const homeworkController = __importStar(require("../../controllers/homework/homework.controller"));
+const submissionCtrl = __importStar(require("../../controllers/homeworkSubmission/homeworkSubmission.controller"));
 const auth_middleware_1 = require("../../middleware/auth.middleware");
 const rbac_middleware_1 = require("../../middleware/rbac.middleware");
-const validate_middleware_1 = require("../../middleware/validate.middleware");
-const homework_validation_1 = require("../../validations/homework/homework.validation");
 const router = (0, express_1.Router)();
+// ⚠️ Student Google Drive callback — NO auth middleware
+router.get("/student/drive-callback", submissionCtrl.handleStudentDriveCallback);
 router.use(auth_middleware_1.verifyToken);
+// Homework CRUD
 router.route("/")
     .get((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "student", "parent"), homeworkController.getAllHomework)
-    .post((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), (0, validate_middleware_1.validate)("body", homework_validation_1.createHomeworkSchema), homeworkController.createHomework);
+    .post((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), homeworkController.teacherHwUploadMiddleware, homeworkController.createHomework);
+// Student Drive OAuth
+router.get("/student/drive-status", (0, rbac_middleware_1.checkRole)("student"), submissionCtrl.getStudentDriveStatus);
+router.get("/student/drive-auth", (0, rbac_middleware_1.checkRole)("student"), submissionCtrl.getStudentDriveAuthUrl);
+// Student submission routes
+router.get("/my-submissions", (0, rbac_middleware_1.checkRole)("student"), submissionCtrl.getMySubmissions);
+// Teacher review routes (BEFORE /:id to avoid conflict)
+router.put("/submissions/:subId/review", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), submissionCtrl.reviewSubmission);
+router.delete("/submissions/:subId", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), submissionCtrl.deleteSubmission);
+// Per-homework
 router.route("/:id")
     .get((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "student", "parent"), homeworkController.getHomework)
-    .put((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), (0, validate_middleware_1.validate)("body", homework_validation_1.updateHomeworkSchema), homeworkController.updateHomework)
+    .put((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), homeworkController.teacherHwUploadMiddleware, homeworkController.updateHomework)
     .delete((0, rbac_middleware_1.checkRole)("owner", "admin"), homeworkController.deleteHomework);
+// Submissions for a specific homework
+router.get("/:id/submissions", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), submissionCtrl.getHomeworkSubmissions);
+router.post("/:id/submit", (0, rbac_middleware_1.checkRole)("student"), submissionCtrl.submissionUploadMiddleware, submissionCtrl.submitHomework);
 exports.default = router;

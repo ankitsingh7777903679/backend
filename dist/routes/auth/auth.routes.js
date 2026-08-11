@@ -43,4 +43,6 @@ router.post("/register", (0, validate_middleware_1.validate)("body", auth_valida
 router.post("/login", (0, validate_middleware_1.validate)("body", auth_validation_1.loginSchema), authController.login);
 router.post("/refresh", (0, validate_middleware_1.validate)("body", auth_validation_1.refreshTokenSchema), authController.refreshToken);
 router.post("/logout", auth_middleware_1.verifyToken, authController.logout);
+router.post("/send-otp", (0, validate_middleware_1.validate)("body", auth_validation_1.requestOtpSchema), authController.sendOtp);
+router.post("/verify-otp", (0, validate_middleware_1.validate)("body", auth_validation_1.verifyOtpSchema), authController.verifyOtp);
 exports.default = router;

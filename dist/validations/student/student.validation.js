@@ -19,5 +19,19 @@ exports.createStudentSchema = zod_1.z.object({
     monthlyFee: zod_1.z.union([zod_1.z.number(), zod_1.z.string()]).optional(),
     timing: zod_1.z.string().optional(),
     address: zod_1.z.string().optional(),
+    feeBillingType: zod_1.z.enum(["monthly", "installment", "lumpsum"]).optional(),
+    billingCycleType: zod_1.z.enum(["monthly", "installment", "lumpsum"]).optional(),
+    totalCourseFee: zod_1.z.number().optional(),
+    numberOfInstallments: zod_1.z.number().optional(),
+    installmentPlan: zod_1.z.array(zod_1.z.object({
+        installmentNo: zod_1.z.number(),
+        title: zod_1.z.string(),
+        amount: zod_1.z.number(),
+        dueDate: zod_1.z.string().or(zod_1.z.date()),
+        paidAmount: zod_1.z.number().optional(),
+        dueAmount: zod_1.z.number().optional(),
+        feeStatus: zod_1.z.enum(["paid", "pending", "partial", "overdue", "verification_pending"]).optional(),
+    })).optional(),
+    portalAccessEnabled: zod_1.z.boolean().optional().default(false),
 });
 exports.updateStudentSchema = exports.createStudentSchema.partial();

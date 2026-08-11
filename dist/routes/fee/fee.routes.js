@@ -42,6 +42,13 @@ const fee_validation_1 = require("../../validations/fee/fee.validation");
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.verifyToken);
 router.route("/")
-    .get((0, rbac_middleware_1.checkRole)("owner", "admin", "accountant", "parent", "student"), feeController.getAllFees)
-    .post((0, rbac_middleware_1.checkRole)("owner", "admin", "accountant"), (0, validate_middleware_1.validate)("body", fee_validation_1.recordFeeSchema), feeController.recordFeePayment);
+    .get((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), feeController.getAllFees)
+    .post((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), (0, validate_middleware_1.validate)("body", fee_validation_1.recordFeeSchema), feeController.recordFeePayment);
+router.get("/ledger/:studentId", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), feeController.getStudentLedger);
+router.post("/submit-proof", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "student"), (0, validate_middleware_1.validate)("body", fee_validation_1.submitPaymentProofSchema), feeController.submitPaymentProof);
+router.get("/pending-proofs", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), feeController.getPendingProofs);
+router.post("/approve-proof/:feeId", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), (0, validate_middleware_1.validate)("body", fee_validation_1.approvePaymentProofSchema), feeController.approvePaymentProof);
+router.post("/reject-proof/:feeId", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), (0, validate_middleware_1.validate)("body", fee_validation_1.rejectPaymentProofSchema), feeController.rejectPaymentProof);
+router.post("/installment-plan/:studentId", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), (0, validate_middleware_1.validate)("body", fee_validation_1.setupInstallmentPlanSchema), feeController.setupInstallmentPlan);
+router.get("/installment-plan/:studentId", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), feeController.getInstallmentPlan);
 exports.default = router;

@@ -39,6 +39,6 @@ const auth_middleware_1 = require("../../middleware/auth.middleware");
 const rbac_middleware_1 = require("../../middleware/rbac.middleware");
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.verifyToken);
-router.get("/overview", (0, rbac_middleware_1.checkRole)("super_admin", "owner"), superAdminController.getOverview);
-router.patch("/institutes/:id/status", (0, rbac_middleware_1.checkRole)("super_admin", "owner"), superAdminController.toggleInstituteStatus);
+router.get("/overview", (0, rbac_middleware_1.checkRole)("super_admin"), superAdminController.getOverview);
+router.patch("/institutes/:id/status", (0, rbac_middleware_1.checkRole)("super_admin"), superAdminController.toggleInstituteStatus);
 exports.default = router;

@@ -15,6 +15,16 @@ export const loginSchema = z.object({
   role:          z.enum(["owner", "admin", "teacher", "accountant", "student", "parent", "super_admin"]).optional(),
 });
 
+export const requestOtpSchema = z.object({
+  email: z.string().email(),
+  instituteCode: z.string().min(1),
+  role: z.enum(["admin", "teacher", "student"]),
+});
+
+export const verifyOtpSchema = requestOtpSchema.extend({
+  otpCode: z.string().regex(/^\d{6}$/),
+});
+
 export const refreshTokenSchema = z.object({
   refreshToken: z.string().min(1, "Refresh token is required"),
 });

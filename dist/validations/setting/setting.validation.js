@@ -11,4 +11,10 @@ exports.updateSettingSchema = zod_1.z.object({
     smsEnabled: zod_1.z.boolean().optional(),
     attendanceReminderTime: zod_1.z.string().optional(),
     feeReminderDaysBefore: zod_1.z.number().optional(),
+    upiId: zod_1.z.string().optional(),
+    payeeName: zod_1.z.string().optional(),
+    upiNote: zod_1.z.string().optional(),
+    lateFeePerDay: zod_1.z.number().optional(),
+    dueDayOfMonth: zod_1.z.number().optional(),
+    graceDays: zod_1.z.number().optional(),
 });

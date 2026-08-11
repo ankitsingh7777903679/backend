@@ -3,11 +3,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.examService = void 0;
 const exam_model_1 = require("../../models/exam/exam.model");
 const student_model_1 = require("../../models/student/student.model");
+const teacher_model_1 = require("../../models/teacher/teacher.model");
 const examResult_model_1 = require("../../models/examResult/examResult.model");
 const AppError_1 = require("../../utils/AppError");
 const mongoose_1 = require("mongoose");
+const notification_service_1 = require("../notification/notification.service");
 exports.examService = {
-    getAll: async (instituteId, query) => {
+    getAll: async (instituteId, query, userRole, userId) => {
         const filter = { instituteId, status: { $ne: "deleted" } };
         if (query.type && query.type !== "all") {
             filter.examType = query.type;
@@ -18,6 +20,49 @@ exports.examService = {
                 { batchName: { $regex: query.search, $options: "i" } },
                 { subject: { $regex: query.search, $options: "i" } },
             ];
+        }
+        // If user is a Staff Teacher, filter exams by their assigned batches
+        if (userRole === "teacher" && userId && mongoose_1.Types.ObjectId.isValid(userId)) {
+            const teacherDoc = await teacher_model_1.Teacher.findOne({
+                instituteId: new mongoose_1.Types.ObjectId(instituteId),
+                $or: [{ userId: new mongoose_1.Types.ObjectId(userId) }, { _id: new mongoose_1.Types.ObjectId(userId) }],
+                status: { $ne: "deleted" },
+            });
+            const assignedBatchIds = teacherDoc?.assignedBatchIds || [];
+            filter.batchId = { $in: assignedBatchIds };
+        }
+        // If user is a Student or Parent, strictly filter exams by their assigned batch!
+        if (userRole === "student" || userRole === "parent") {
+            let studentBatchName = "";
+            if (userId && mongoose_1.Types.ObjectId.isValid(userId)) {
+                const student = await student_model_1.Student.findOne({
+                    instituteId: new mongoose_1.Types.ObjectId(instituteId),
+                    $or: [{ _id: new mongoose_1.Types.ObjectId(userId) }, { userId: new mongoose_1.Types.ObjectId(userId) }],
+                    status: { $ne: "deleted" },
+                });
+                if (student && student.batchName) {
+                    studentBatchName = student.batchName.trim();
+                }
+            }
+            if (studentBatchName) {
+                const escapeRegExp = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                const batchRegex = new RegExp(`^${escapeRegExp(studentBatchName)}$`, "i");
+                // Student can only see exams matching their batch, or marked 'all' / 'All Batches'
+                const batchConditions = [
+                    { batchName: batchRegex },
+                    { batchName: { $regex: /^all$/i } },
+                    { batchName: { $regex: /^all batches$/i } },
+                    { batchName: { $exists: false } },
+                    { batchName: "" },
+                ];
+                if (filter.$or) {
+                    filter.$and = [{ $or: filter.$or }, { $or: batchConditions }];
+                    delete filter.$or;
+                }
+                else {
+                    filter.$or = batchConditions;
+                }
+            }
         }
         const exams = await exam_model_1.Exam.find(filter).sort({ examDate: -1 });
         return exams;
@@ -36,6 +81,10 @@ exports.examService = {
             examDate: new Date(data.examDate),
             createdByUserId: safeUserId,
         });
+        // Trigger Test Scheduled Notification to batch students
+        notification_service_1.notificationService
+            .sendTestScheduledNotification(instituteId, exam.batchName, exam.title, exam.examDate, exam.startTime, exam.mode)
+            .catch(() => { });
         return exam;
     },
     update: async (id, data, instituteId) => {
@@ -71,6 +120,18 @@ exports.examService = {
                 $or: [{ _id: targetObjId }, { userId: targetObjId }],
                 status: { $ne: "deleted" },
             });
+        }
+        // STRICT BATCH ENFORCEMENT GUARD FOR LIVE EXAM SUBMISSION:
+        if (student && student.batchName && exam.batchName) {
+            const examBatch = exam.batchName.trim().toLowerCase();
+            const studentBatch = student.batchName.trim().toLowerCase();
+            const isUniversalBatch = examBatch === "all" ||
+                examBatch === "all batches" ||
+                examBatch === "" ||
+                !exam.batchName;
+            if (!isUniversalBatch && examBatch !== studentBatch) {
+                throw new AppError_1.AppError(`Access Denied: You belong to the '${student.batchName}' batch, but this exam is restricted to the '${exam.batchName}' batch.`, 403);
+            }
         }
         const studentIdObj = student ? student._id : (mongoose_1.Types.ObjectId.isValid(userOrStudentId) ? new mongoose_1.Types.ObjectId(userOrStudentId) : new mongoose_1.Types.ObjectId());
         const studentName = student ? (student.name || `${student.firstName || ""} ${student.lastName || ""}`.trim()) : "Student";
@@ -131,6 +192,16 @@ exports.examService = {
             if (allResults[i]._id.toString() === examResult._id.toString()) {
                 calculatedRank = i + 1;
             }
+        }
+        // Trigger Test Submitted & Test Evaluated Score & Rank Notifications to Student
+        const studentUserId = student?.userId || (mongoose_1.Types.ObjectId.isValid(userOrStudentId) ? userOrStudentId : undefined);
+        if (studentUserId) {
+            notification_service_1.notificationService
+                .sendTestSubmittedNotification(instituteId, studentIdObj, studentUserId, exam.title)
+                .catch(() => { });
+            notification_service_1.notificationService
+                .sendTestEvaluatedNotification(instituteId, studentIdObj, studentUserId, exam.title, totalScore, exam.totalMarks, calculatedRank)
+                .catch(() => { });
         }
         return {
             examResultId: examResult._id.toString(),

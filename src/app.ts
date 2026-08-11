@@ -26,6 +26,7 @@ import settingRoutes from "./routes/setting/setting.routes";
 import notificationRoutes from "./routes/notification/notification.routes";
 import materialRoutes from "./routes/studyMaterial/studyMaterial.routes";
 import aiQuestionRoutes from "./routes/aiQuestionGenerator/aiQuestionGenerator.routes";
+import portalAccessRoutes from "./routes/portalAccess/portalAccess.routes";
 import { errorHandler } from "./middleware/errorHandler.middleware";
 
 const app = express();
@@ -72,6 +73,7 @@ app.use("/api/settings", settingRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/materials", materialRoutes);
 app.use("/api/ai", aiQuestionRoutes);
+app.use("/api/portal-invitations", portalAccessRoutes);
 
 // Global Error Handler (MUST BE LAST)
 app.use(errorHandler);

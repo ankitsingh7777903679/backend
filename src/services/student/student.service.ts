@@ -5,13 +5,11 @@ import { Class } from "../../models/class/class.model";
 import { Teacher } from "../../models/teacher/teacher.model";
 import { ExamResult } from "../../models/examResult/examResult.model";
 import { Exam } from "../../models/exam/exam.model";
-import { Institute } from "../../models/institute/institute.model";
 import { generateAdmissionNo } from "../../utils/generateAdmissionNo";
-import bcrypt from "bcrypt";
 import { AppError } from "../../utils/AppError";
 import { CreateStudentInput } from "../../validations/student/student.validation";
 import { notificationService } from "../notification/notification.service";
-import { emailService } from "../email/email.service";
+import { portalAccessService } from "../portalAccess/portalAccess.service";
 
 export const studentService = {
   getAll: async (instituteId: string, query: { search?: string; batch?: string; feeStatus?: string }, reqUser?: import("../../types/express").JWTPayload) => {
@@ -20,14 +18,15 @@ export const studentService = {
       status: { $ne: "deleted" },
     };
 
-    // Class/Batch Scoping for Staff Teachers
+    // Keep this authorization scope when a class filter is subsequently applied.
+    let assignedBatchIds: Types.ObjectId[] | undefined;
     if (reqUser && reqUser.role === "teacher") {
       const teacherDoc = await Teacher.findOne({
         instituteId,
         $or: [{ userId: reqUser.userId }, { _id: reqUser.userId }],
         status: { $ne: "deleted" },
       });
-      const assignedBatchIds = teacherDoc?.assignedBatchIds || [];
+      assignedBatchIds = teacherDoc?.assignedBatchIds || [];
       filter.batchId = { $in: assignedBatchIds };
     }
 
@@ -42,9 +41,17 @@ export const studentService = {
       }).select("_id name");
 
       if (matchingClasses.length > 0) {
-        // Filter by batchId (most reliable after shifts)
-        filter.batchId = { $in: matchingClasses.map((c) => c._id) };
+        const matchingIds = matchingClasses.map((c) => c._id);
+        filter.batchId = {
+          $in: assignedBatchIds
+            ? matchingIds.filter((id) => assignedBatchIds!.some((assigned) => assigned.equals(id)))
+            : matchingIds,
+        };
       } else {
+        if (assignedBatchIds) {
+          filter.batchId = { $in: [] };
+          return Student.find(filter).sort({ createdAt: -1 });
+        }
         // Fallback: match batchName string (for legacy data)
         filter.$or = [
           { batchName: { $regex: `^${escaped}$`, $options: "i" } },
@@ -124,7 +131,7 @@ export const studentService = {
     };
   },
 
-  create: async (data: CreateStudentInput, instituteId: string) => {
+  create: async (data: CreateStudentInput, instituteId: string, actorId: string) => {
     const existing = await Student.findOne({ phone: data.phone, instituteId, status: { $ne: "deleted" } });
     if (existing) {
       throw new AppError("A student with this phone number already exists", 409);
@@ -143,19 +150,7 @@ export const studentService = {
       }
     }
 
-    // Auto-generate a strong password for new student
-    const autoPassword = `Tp${admissionNo}@${new Date().getFullYear()}`;
-    const passwordHash = await bcrypt.hash(autoPassword, 10);
     const studentEmail = data.email?.trim().toLowerCase() || null;
-
-    const user = await User.create({
-      instituteId,
-      role: "student",
-      name: fullName,
-      email: studentEmail || `${admissionNo.toLowerCase()}@coaching.local`,
-      phone: data.phone,
-      passwordHash,
-    });
 
     const formattedInstallmentPlan = Array.isArray(data.installmentPlan)
       ? data.installmentPlan.map((inst: any) => ({
@@ -169,18 +164,17 @@ export const studentService = {
         }))
       : undefined;
 
-    let student;
-    try {
-      student = await Student.create({
-        ...data,
+    const { portalAccessEnabled, ...studentData } = data;
+    const student = await Student.create({
+        ...studentData,
         name: fullName,
         email: studentEmail,
         batchName: batchOrClass,
         batchId: resolvedBatchId,
         admissionNo,
         instituteId,
-        userId: user._id,
         feeStatus: "pending",
+        portalAccess: "disabled",
         monthlyFee: data.monthlyFee !== undefined && data.monthlyFee !== null ? Number(data.monthlyFee) : 0,
         feeBillingType: data.feeBillingType || data.billingCycleType || "monthly",
         billingCycleType: data.feeBillingType || data.billingCycleType || "monthly",
@@ -190,34 +184,13 @@ export const studentService = {
         attendancePercentage: 100,
       });
 
-      user.linkedId = student._id as unknown as import("mongoose").Types.ObjectId;
-      await user.save();
-    } catch (err) {
-      await User.findByIdAndDelete(user._id);
-      throw err;
-    }
-
-    // Send Welcome Email with Login Credentials if email is provided
-    if (studentEmail) {
-      Institute.findById(instituteId).then((inst) => {
-        emailService.sendWelcomeCredentialsEmail(
-          studentEmail,
-          fullName,
-          studentEmail,
-          autoPassword,
-          "student",
-          inst?.code
-        ).catch(() => {
-          console.log(`[StudentService] Credentials console fallback | Email: ${studentEmail} | Password: ${autoPassword} | Code: ${inst?.code}`);
-        });
-      }).catch(() => {});
-    } else {
-      console.log(`[StudentService] No email provided | AdmNo: ${admissionNo} | Password: ${autoPassword}`);
-    }
+    if (portalAccessEnabled) await portalAccessService.createInvitation("student", student._id.toString(), instituteId, actorId);
 
     // Trigger Welcome & Batch Enrolled Notifications
-    notificationService.sendWelcomeNotification(instituteId, student._id, user._id, fullName).catch(() => {});
-    notificationService.sendBatchEnrolledNotification(instituteId, student._id, user._id, fullName, batchOrClass).catch(() => {});
+    if (student.userId) {
+      notificationService.sendWelcomeNotification(instituteId, student._id, student.userId, fullName).catch(() => {});
+      notificationService.sendBatchEnrolledNotification(instituteId, student._id, student.userId, fullName, batchOrClass).catch(() => {});
+    }
 
     return student;
   },

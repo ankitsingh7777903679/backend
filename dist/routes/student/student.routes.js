@@ -48,8 +48,8 @@ router.route("/")
     .get((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), studentController.getAllStudents)
     .post((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), (0, validate_middleware_1.validate)("body", student_validation_1.createStudentSchema), studentController.createStudent);
 router.route("/:id")
-    .get((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant", "parent"), studentController.getStudent)
+    .get((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), studentController.getStudent)
     .put((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), (0, validate_middleware_1.validate)("body", student_validation_1.updateStudentSchema), studentController.updateStudent)
     .delete((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), studentController.deleteStudent);
-router.get("/:id/exam-results", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant", "parent", "student"), studentController.getStudentExamResults);
+router.get("/:id/exam-results", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "accountant"), studentController.getStudentExamResults);
 exports.default = router;

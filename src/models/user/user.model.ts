@@ -8,7 +8,8 @@ export interface IUser extends Document {
   phone?: string;
   passwordHash: string;
   photo?: string;
-  linkedId?: Types.ObjectId; // ObjectId ref to Student or Teacher model
+  /** @deprecated Profile ownership is authoritative through Teacher.userId / Student.userId. */
+  linkedId?: Types.ObjectId;
   permissions?: string[];
   status: "active" | "inactive" | "deleted";
   refreshToken?: string;

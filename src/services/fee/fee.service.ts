@@ -59,7 +59,8 @@ export const feeService = {
     const previousArrears = pastFees.length > 0 ? (pastFees[0].dueAmount || 0) : 0;
 
     const monthlyFee = student.monthlyFee || 0;
-    const oneTimeRegistrationFee = student.oneTimeRegistrationFee || 0;
+    const registrationAlreadyBilled = pastFees.some((fee) => fee.feeType === "registration" || (fee.registrationFeeApplied || 0) > 0);
+    const oneTimeRegistrationFee = registrationAlreadyBilled ? 0 : (student.oneTimeRegistrationFee || 0);
     const discountAmount = student.discountAmount || 0;
 
     const netPayable = Math.max(0, monthlyFee + previousArrears + oneTimeRegistrationFee - discountAmount);
@@ -83,6 +84,15 @@ export const feeService = {
   },
 
   recordPayment: async (data: RecordFeeInput, instituteId: string, userId?: string) => {
+    const student = await Student.findOne({ _id: data.studentId, instituteId, status: { $ne: "deleted" } });
+    if (!student) throw new AppError("Student profile not found", 404);
+    // Receipt identity fields are server-owned snapshots, never browser input.
+    data = {
+      ...data,
+      studentName: student.name,
+      admissionNo: student.admissionNo,
+      batchName: student.batchName || student.schoolClass || "General Class",
+    };
     const receiptNo = await generateReceiptNo(instituteId);
     const safeUserId = userId && Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : undefined;
 
@@ -100,17 +110,21 @@ export const feeService = {
       studentId: data.studentId,
       month: data.month,
       instituteId,
+      feeType: data.feeType || "monthly",
+      installmentNo: data.installmentNo ?? null,
     });
 
     let fee;
 
     if (existingFee) {
       const updatedPaid = (existingFee.paidAmount || 0) + data.paidAmount;
-      const totalAmount = data.totalAmount || existingFee.totalAmount;
+      // A payment must not alter a previously issued invoice total.
+      const totalAmount = existingFee.totalAmount;
       const previousArrears = data.previousArrears ?? existingFee.previousArrears ?? 0;
       const discountApplied = data.discountApplied ?? existingFee.discountApplied ?? 0;
       const netPayable = Math.max(0, totalAmount + previousArrears - discountApplied);
       const dueAmount = Math.max(0, netPayable - updatedPaid);
+      if (updatedPaid > netPayable) throw new AppError("Payment exceeds the outstanding balance", 400);
 
       let feeStatus: "paid" | "partial" | "pending" | "overdue";
       if (dueAmount === 0) {
@@ -137,6 +151,7 @@ export const feeService = {
       const registrationFeeApplied = data.registrationFeeApplied || 0;
       const netPayable = Math.max(0, data.totalAmount + previousArrears + registrationFeeApplied - discountApplied);
       const dueAmount = Math.max(0, netPayable - data.paidAmount);
+      if (data.paidAmount > netPayable) throw new AppError("Payment exceeds the invoice balance", 400);
 
       let feeStatus: "paid" | "partial" | "pending" | "overdue";
       if (dueAmount === 0) {
@@ -203,11 +218,16 @@ export const feeService = {
     feeId: string,
     data: { paymentProofUrl: string; studentUtrNumber: string; lateFeeAmount?: number; studentSubmittedAmount?: number },
     studentUserId: string,
-    instituteId: string
+    instituteId: string,
+    requireOwnership = false
   ) => {
     let fee = await Fee.findOne({ _id: feeId, instituteId });
     if (!fee) {
       throw new AppError("Fee record not found", 404);
+    }
+    if (requireOwnership) {
+      const ownsFee = await Student.exists({ _id: fee.studentId, instituteId, userId: studentUserId, status: { $ne: "deleted" } });
+      if (!ownsFee) throw new AppError("You can submit payment proof only for your own fee record", 403);
     }
 
     fee.paymentProofUrl = data.paymentProofUrl;
@@ -252,8 +272,12 @@ export const feeService = {
         ? fee.dueAmount
         : fee.totalAmount;
 
-    const newPaidAmount = (fee.paidAmount || 0) + amountToApprove;
     const netTotal = fee.netPayable || fee.totalAmount;
+    if (amountToApprove > netTotal) {
+      throw new AppError("Approved amount cannot exceed the outstanding balance", 400);
+    }
+
+    const newPaidAmount = (fee.paidAmount || 0) + amountToApprove;
     const newDueAmount = Math.max(0, netTotal - newPaidAmount);
     const newStatus: "paid" | "partial" = newDueAmount === 0 ? "paid" : "partial";
 
@@ -290,6 +314,9 @@ export const feeService = {
   rejectPaymentProof: async (feeId: string, rejectionReason: string, instituteId: string) => {
     const fee = await Fee.findOne({ _id: feeId, instituteId });
     if (!fee) throw new AppError("Fee record not found", 404);
+    if (fee.feeStatus !== "verification_pending") {
+      throw new AppError("Fee is not pending verification", 400);
+    }
 
     const prevPaid = fee.paidAmount || 0;
     fee.feeStatus = prevPaid > 0 ? "partial" : "pending";

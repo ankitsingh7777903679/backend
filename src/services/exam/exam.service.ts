@@ -6,6 +6,8 @@ import { AppError } from "../../utils/AppError";
 import { CreateExamInput } from "../../validations/exam/exam.validation";
 import { Types } from "mongoose";
 import { notificationService } from "../notification/notification.service";
+import { getLinkedStudentIds } from "../../utils/accessControl";
+import { JWTPayload } from "../../types/express";
 
 export const examService = {
   getAll: async (
@@ -39,27 +41,36 @@ export const examService = {
       filter.batchId = { $in: assignedBatchIds };
     }
 
-    // If user is a Student or Parent, strictly filter exams by their assigned batch!
+    // If user is a Student or Parent, strictly filter exams by their linked batch(es)!
     if (userRole === "student" || userRole === "parent") {
-      let studentBatchName = "";
-      if (userId && Types.ObjectId.isValid(userId)) {
-        const student = await Student.findOne({
-          instituteId: new Types.ObjectId(instituteId),
-          $or: [{ _id: new Types.ObjectId(userId) }, { userId: new Types.ObjectId(userId) }],
-          status: { $ne: "deleted" },
-        });
-        if (student && student.batchName) {
-          studentBatchName = student.batchName.trim();
-        }
+      const linkedStudentIds = await getLinkedStudentIds(
+        { userId: userId || "", instituteId, role: userRole } as JWTPayload,
+        instituteId
+      );
+      if (linkedStudentIds.length === 0) {
+        throw new AppError("No linked student profile found for your account. Contact your institute.", 403);
       }
 
-      if (studentBatchName) {
+      const linkedStudents = await Student.find({
+        _id: { $in: linkedStudentIds },
+        instituteId,
+        status: { $ne: "deleted" },
+      }).select("batchName schoolClass");
+
+      const batchNames = Array.from(
+        new Set(
+          linkedStudents.flatMap((s) =>
+            [s.batchName, s.schoolClass].filter(Boolean).map((b) => String(b).trim())
+          )
+        )
+      );
+
+      if (batchNames.length > 0) {
         const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const batchRegex = new RegExp(`^${escapeRegExp(studentBatchName)}$`, "i");
 
         // Student can only see exams matching their batch, or marked 'all' / 'All Batches'
         const batchConditions = [
-          { batchName: batchRegex },
+          ...batchNames.map((b) => ({ batchName: new RegExp(`^${escapeRegExp(b)}$`, "i") })),
           { batchName: { $regex: /^all$/i } },
           { batchName: { $regex: /^all batches$/i } },
           { batchName: { $exists: false } },

@@ -67,7 +67,7 @@ const homeworkSubmissionSchema = new Schema<IHomeworkSubmission>(
   { timestamps: true }
 );
 
-homeworkSubmissionSchema.index({ homeworkId: 1, studentId: 1 }, { unique: true });
+homeworkSubmissionSchema.index({ instituteId: 1, homeworkId: 1, studentId: 1 }, { unique: true });
 homeworkSubmissionSchema.index({ instituteId: 1, studentUserId: 1 });
 homeworkSubmissionSchema.index({ instituteId: 1, homeworkId: 1 });
 

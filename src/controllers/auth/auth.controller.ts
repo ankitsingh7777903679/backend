@@ -24,12 +24,11 @@ export const logout = catchAsync(async (req: Request, res: Response) => {
 });
 
 export const sendOtp = catchAsync(async (req: Request, res: Response) => {
-  const result = await authService.sendOtp(req.body.email);
+  const result = await authService.sendOtp(req.body);
   res.json(apiResponse.success(result, "OTP code sent to email successfully"));
 });
 
 export const verifyOtp = catchAsync(async (req: Request, res: Response) => {
-  const result = await authService.verifyOtp(req.body.email, req.body.otpCode);
+  const result = await authService.verifyOtp(req.body);
   res.json(apiResponse.success(result, "OTP verification successful"));
 });
-

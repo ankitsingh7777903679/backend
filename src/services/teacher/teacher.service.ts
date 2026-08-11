@@ -1,10 +1,10 @@
+import bcrypt from "bcrypt";
+import { Types } from "mongoose";
 import { Teacher } from "../../models/teacher/teacher.model";
 import { User } from "../../models/user/user.model";
-import { Institute } from "../../models/institute/institute.model";
-import bcrypt from "bcrypt";
 import { AppError } from "../../utils/AppError";
 import { CreateTeacherInput } from "../../validations/teacher/teacher.validation";
-import { emailService } from "../email/email.service";
+import { portalAccessService } from "../portalAccess/portalAccess.service";
 
 export const teacherService = {
   getAll: async (instituteId: string, query: { search?: string; type?: string }) => {
@@ -35,18 +35,12 @@ export const teacherService = {
     return teacher;
   },
 
-  create: async (data: CreateTeacherInput & { password?: string; permissions?: string[]; assignedBatchIds?: string[] }, instituteId: string) => {
+  create: async (data: CreateTeacherInput & { permissions?: string[]; assignedBatchIds?: string[]; portalAccess?: "disabled" | "invited" | "active" }, instituteId: string, actorId: string) => {
     const existing = await Teacher.findOne({ phone: data.phone, instituteId, status: { $ne: "deleted" } });
     if (existing) {
       throw new AppError("A teacher with this mobile number already exists", 409);
     }
 
-    const teacherEmail = data.email?.trim().toLowerCase() || null;
-    const finalPassword = data.password && data.password.trim().length >= 6
-      ? data.password.trim()
-      : `Tp${data.phone.slice(-4)}@${new Date().getFullYear()}`;
-
-    const passwordHash = await bcrypt.hash(finalPassword, 10);
     const defaultPermissions = [
       "manage_students",
       "mark_attendance",
@@ -57,94 +51,103 @@ export const teacherService = {
       "view_student_reports",
     ];
 
+    const { portalAccessEnabled, portalAccess, password: _ignoredPassword, ...teacherData } = data;
     const permissionsToSet = data.permissions && data.permissions.length > 0 ? data.permissions : defaultPermissions;
+    const accessStatus = portalAccess || (portalAccessEnabled !== false ? "active" : "disabled");
 
-    const user = await User.create({
-      instituteId,
-      role: "teacher",
-      name: data.name,
-      email: teacherEmail || `${data.phone}@teacher.local`,
-      phone: data.phone,
-      passwordHash,
-      permissions: permissionsToSet,
-    });
+    let userId: Types.ObjectId | undefined;
+    if (accessStatus === "active") {
+      const emailVal = data.email?.trim().toLowerCase() || `${data.phone}@teacher.local`;
+      const passwordHash = await bcrypt.hash("Teacher@123", 10);
+
+      const existingUser = await User.findOne({ instituteId, $or: [{ email: emailVal }, { phone: data.phone }], status: { $ne: "deleted" } });
+      if (existingUser) {
+        existingUser.status = "active";
+        existingUser.role = "teacher";
+        existingUser.permissions = permissionsToSet;
+        await existingUser.save();
+        userId = existingUser._id as Types.ObjectId;
+      } else {
+        const newUser = await User.create({
+          instituteId,
+          role: "teacher",
+          name: data.name,
+          email: emailVal,
+          phone: data.phone,
+          passwordHash,
+          permissions: permissionsToSet,
+          status: "active",
+        });
+        userId = newUser._id as Types.ObjectId;
+      }
+    }
 
     const teacher = await Teacher.create({
-      ...data,
-      email: teacherEmail,
+      ...teacherData,
+      email: data.email?.trim().toLowerCase() || undefined,
       instituteId,
-      userId: user._id,
+      userId,
       permissions: permissionsToSet,
+      portalAccess: accessStatus,
     });
 
-    user.linkedId = teacher._id as unknown as import("mongoose").Types.ObjectId;
-    await user.save();
-
-    // Send Welcome Email with Login Credentials if email provided
-    if (teacherEmail) {
-      Institute.findById(instituteId).then((inst) => {
-        emailService.sendWelcomeCredentialsEmail(
-          teacherEmail,
-          data.name,
-          teacherEmail,
-          finalPassword,
-          "teacher",
-          inst?.code
-        ).catch(() => {
-          console.log(`[TeacherService] Credentials console fallback | Email: ${teacherEmail} | Password: ${finalPassword} | Code: ${inst?.code}`);
-        });
-      }).catch(() => {});
-    } else {
-      console.log(`[TeacherService] No email provided | Phone: ${data.phone} | Password: ${finalPassword}`);
-    }
-
-    return teacher;
+    return Teacher.findById(teacher._id);
   },
 
-  update: async (id: string, data: Partial<CreateTeacherInput & { password?: string; permissions?: string[]; assignedBatchIds?: string[] }>, instituteId: string) => {
-    const teacher = await Teacher.findOneAndUpdate(
-      { _id: id, instituteId },
-      { $set: data },
-      { new: true, runValidators: true }
-    );
-    if (!teacher) throw new AppError("Teacher not found", 404);
+  update: async (id: string, data: Partial<CreateTeacherInput & { permissions?: string[]; assignedBatchIds?: string[]; portalAccess?: "disabled" | "invited" | "active" }>, instituteId: string) => {
+    const teacherDoc = await Teacher.findOne({ _id: id, instituteId });
+    if (!teacherDoc) throw new AppError("Teacher not found", 404);
 
-    // Sync updates to linked User account (or create if missing)
-    if (teacher.userId) {
-      const userUpdate: Record<string, unknown> = {};
-      if (data.name) userUpdate.name = data.name;
-      if (data.phone) userUpdate.phone = data.phone;
-      if (data.email) userUpdate.email = data.email.trim().toLowerCase();
-      if (data.permissions) userUpdate.permissions = data.permissions;
-      if (data.password && data.password.trim().length >= 6) {
-        userUpdate.passwordHash = await bcrypt.hash(data.password.trim(), 10);
+    const targetAccess = data.portalAccess !== undefined
+      ? data.portalAccess
+      : (data.portalAccessEnabled !== undefined ? (data.portalAccessEnabled ? "active" : "disabled") : teacherDoc.portalAccess);
+
+    let userId = teacherDoc.userId;
+
+    if (targetAccess === "active") {
+      const emailVal = (data.email || teacherDoc.email || "").trim().toLowerCase() || `${data.phone || teacherDoc.phone}@teacher.local`;
+      const phoneVal = data.phone || teacherDoc.phone;
+      const nameVal = data.name || teacherDoc.name;
+      const permsVal = data.permissions || teacherDoc.permissions;
+
+      if (userId) {
+        await User.updateOne({ _id: userId, instituteId }, { $set: { status: "active", role: "teacher", email: emailVal, phone: phoneVal, name: nameVal, permissions: permsVal } });
+      } else {
+        const passwordHash = await bcrypt.hash("Teacher@123", 10);
+        const existingUser = await User.findOne({ instituteId, $or: [{ email: emailVal }, { phone: phoneVal }], status: { $ne: "deleted" } });
+        if (existingUser) {
+          existingUser.status = "active";
+          existingUser.role = "teacher";
+          existingUser.permissions = permsVal;
+          await existingUser.save();
+          userId = existingUser._id as Types.ObjectId;
+        } else {
+          const newUser = await User.create({
+            instituteId,
+            role: "teacher",
+            name: nameVal,
+            email: emailVal,
+            phone: phoneVal,
+            passwordHash,
+            permissions: permsVal,
+            status: "active",
+          });
+          userId = newUser._id as Types.ObjectId;
+        }
       }
-      if (Object.keys(userUpdate).length > 0) {
-        await User.updateOne({ _id: teacher.userId }, { $set: userUpdate });
+    } else if (targetAccess === "disabled") {
+      if (userId) {
+        await User.updateOne({ _id: userId, instituteId }, { $set: { status: "inactive" } });
       }
-    } else {
-      // Auto-create missing User account for existing teacher
-      const teacherEmail = teacher.email?.trim().toLowerCase() || `${teacher.phone}@teacher.local`;
-      const pass = data.password && data.password.trim().length >= 6
-        ? data.password.trim()
-        : `Tp${teacher.phone.slice(-4)}@${new Date().getFullYear()}`;
-      const passwordHash = await bcrypt.hash(pass, 10);
-
-      const user = await User.create({
-        instituteId,
-        role: "teacher",
-        name: teacher.name,
-        email: teacherEmail,
-        phone: teacher.phone,
-        passwordHash,
-        linkedId: teacher._id,
-      });
-
-      teacher.userId = user._id as unknown as import("mongoose").Types.ObjectId;
-      await teacher.save();
     }
 
-    return teacher;
+    const updatedTeacher = await Teacher.findOneAndUpdate(
+      { _id: id, instituteId },
+      { $set: { ...data, portalAccess: targetAccess, userId } },
+      { new: true, runValidators: true }
+    );
+
+    return updatedTeacher;
   },
 
   delete: async (id: string, instituteId: string) => {

@@ -40,16 +40,31 @@ const teacherSchema = new mongoose_1.Schema({
     userId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User" },
     name: { type: String, required: true, trim: true },
     phone: { type: String, required: true, trim: true },
-    email: { type: String, required: true, lowercase: true, trim: true },
+    email: { type: String, required: false, lowercase: true, trim: true },
+    teachingType: { type: String, enum: ["coaching", "home_tuition", "both"], default: "coaching" },
+    portalAccess: { type: String, enum: ["disabled", "invited", "active"], default: "disabled" },
     subjects: [{ type: String, trim: true }],
     qualification: { type: String, trim: true },
     experienceYears: { type: Number, default: 0 },
     employmentType: { type: String, enum: ["full_time", "part_time", "guest"], default: "full_time" },
     joiningDate: { type: Date },
     photo: { type: String },
-    assignedBatchIds: [{ type: mongoose_1.Schema.Types.ObjectId, ref: "Batch" }],
+    assignedBatchIds: [{ type: mongoose_1.Schema.Types.ObjectId, ref: "Class" }],
+    permissions: [{
+            type: String,
+            default: [
+                "manage_students",
+                "mark_attendance",
+                "manage_classes",
+                "manage_homework",
+                "manage_materials",
+                "manage_tests",
+                "view_student_reports"
+            ]
+        }],
     status: { type: String, enum: ["active", "inactive", "deleted"], default: "active" },
 }, { timestamps: true });
 teacherSchema.index({ instituteId: 1, status: 1 });
 teacherSchema.index({ instituteId: 1, phone: 1 });
+teacherSchema.index({ userId: 1 }, { unique: true, sparse: true });
 exports.Teacher = mongoose_1.default.model("Teacher", teacherSchema);

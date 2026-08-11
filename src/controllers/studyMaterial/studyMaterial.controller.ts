@@ -282,7 +282,7 @@ export const deleteMaterial = catchAsync(async (req: Request, res: Response) => 
 // POST /api/materials/:id/download
 // ────────────────────────────────────────────────────
 export const incrementDownload = catchAsync(async (req: Request, res: Response) => {
-  await StudyMaterial.findByIdAndUpdate(req.params.id, { $inc: { downloadCount: 1 } });
+  await StudyMaterial.updateOne({ _id: req.params.id, instituteId: req.user.instituteId, status: "active" }, { $inc: { downloadCount: 1 } });
   return res.json(apiResponse.success(null, "Download count updated"));
 });
 

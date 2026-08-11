@@ -1,24 +1,34 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.studentService = void 0;
 const mongoose_1 = require("mongoose");
 const student_model_1 = require("../../models/student/student.model");
 const user_model_1 = require("../../models/user/user.model");
 const class_model_1 = require("../../models/class/class.model");
+const teacher_model_1 = require("../../models/teacher/teacher.model");
 const examResult_model_1 = require("../../models/examResult/examResult.model");
 const exam_model_1 = require("../../models/exam/exam.model");
 const generateAdmissionNo_1 = require("../../utils/generateAdmissionNo");
-const bcrypt_1 = __importDefault(require("bcrypt"));
 const AppError_1 = require("../../utils/AppError");
+const notification_service_1 = require("../notification/notification.service");
+const portalAccess_service_1 = require("../portalAccess/portalAccess.service");
 exports.studentService = {
-    getAll: async (instituteId, query) => {
+    getAll: async (instituteId, query, reqUser) => {
         const filter = {
             instituteId,
             status: { $ne: "deleted" },
         };
+        // Keep this authorization scope when a class filter is subsequently applied.
+        let assignedBatchIds;
+        if (reqUser && reqUser.role === "teacher") {
+            const teacherDoc = await teacher_model_1.Teacher.findOne({
+                instituteId,
+                $or: [{ userId: reqUser.userId }, { _id: reqUser.userId }],
+                status: { $ne: "deleted" },
+            });
+            assignedBatchIds = teacherDoc?.assignedBatchIds || [];
+            filter.batchId = { $in: assignedBatchIds };
+        }
         // Filter by batch: look up class by name to get _id, then filter by batchId
         // This handles names with special chars like "Class 12 (Science)"
         if (query.batch && query.batch !== "all") {
@@ -29,10 +39,18 @@ exports.studentService = {
                 status: { $ne: "deleted" },
             }).select("_id name");
             if (matchingClasses.length > 0) {
-                // Filter by batchId (most reliable after shifts)
-                filter.batchId = { $in: matchingClasses.map((c) => c._id) };
+                const matchingIds = matchingClasses.map((c) => c._id);
+                filter.batchId = {
+                    $in: assignedBatchIds
+                        ? matchingIds.filter((id) => assignedBatchIds.some((assigned) => assigned.equals(id)))
+                        : matchingIds,
+                };
             }
             else {
+                if (assignedBatchIds) {
+                    filter.batchId = { $in: [] };
+                    return student_model_1.Student.find(filter).sort({ createdAt: -1 });
+                }
                 // Fallback: match batchName string (for legacy data)
                 filter.$or = [
                     { batchName: { $regex: `^${escaped}$`, $options: "i" } },
@@ -104,7 +122,7 @@ exports.studentService = {
             days: classDoc?.days || "Mon – Sat (Daily)",
         };
     },
-    create: async (data, instituteId) => {
+    create: async (data, instituteId, actorId) => {
         const existing = await student_model_1.Student.findOne({ phone: data.phone, instituteId, status: { $ne: "deleted" } });
         if (existing) {
             throw new AppError_1.AppError("A student with this phone number already exists", 409);
@@ -120,35 +138,77 @@ exports.studentService = {
                 resolvedBatchId = clsDoc._id.toString();
             }
         }
-        // Auto-create login User credential for Student
-        const defaultPassword = "Student@123";
-        const passwordHash = await bcrypt_1.default.hash(defaultPassword, 10);
-        const user = await user_model_1.User.create({
-            instituteId,
-            role: "student",
-            name: fullName,
-            email: data.email || `${admissionNo.toLowerCase()}@coaching.local`,
-            phone: data.phone,
-            passwordHash,
-        });
+        const studentEmail = data.email?.trim().toLowerCase() || null;
+        const formattedInstallmentPlan = Array.isArray(data.installmentPlan)
+            ? data.installmentPlan.map((inst) => ({
+                installmentNo: Number(inst.installmentNo),
+                title: String(inst.title),
+                amount: Number(inst.amount),
+                dueDate: new Date(inst.dueDate),
+                paidAmount: Number(inst.paidAmount) || 0,
+                dueAmount: Number(inst.dueAmount) || Number(inst.amount),
+                feeStatus: inst.feeStatus || "pending",
+            }))
+            : undefined;
+        const { portalAccessEnabled, ...studentData } = data;
         const student = await student_model_1.Student.create({
-            ...data,
+            ...studentData,
             name: fullName,
+            email: studentEmail,
             batchName: batchOrClass,
             batchId: resolvedBatchId,
             admissionNo,
             instituteId,
-            userId: user._id,
             feeStatus: "pending",
-            monthlyFee: Number(data.monthlyFee) || 1500,
+            portalAccess: "disabled",
+            monthlyFee: data.monthlyFee !== undefined && data.monthlyFee !== null ? Number(data.monthlyFee) : 0,
+            feeBillingType: data.feeBillingType || data.billingCycleType || "monthly",
+            billingCycleType: data.feeBillingType || data.billingCycleType || "monthly",
+            totalCourseFee: Number(data.totalCourseFee) || 0,
+            numberOfInstallments: Number(data.numberOfInstallments) || (formattedInstallmentPlan?.length || 1),
+            installmentPlan: formattedInstallmentPlan,
             attendancePercentage: 100,
         });
-        user.linkedId = student._id;
-        await user.save();
+        if (portalAccessEnabled)
+            await portalAccess_service_1.portalAccessService.createInvitation("student", student._id.toString(), instituteId, actorId);
+        // Trigger Welcome & Batch Enrolled Notifications
+        if (student.userId) {
+            notification_service_1.notificationService.sendWelcomeNotification(instituteId, student._id, student.userId, fullName).catch(() => { });
+            notification_service_1.notificationService.sendBatchEnrolledNotification(instituteId, student._id, student.userId, fullName, batchOrClass).catch(() => { });
+        }
         return student;
     },
     update: async (id, data, instituteId) => {
         const updateData = { ...data };
+        if (data.monthlyFee !== undefined) {
+            updateData.monthlyFee = Number(data.monthlyFee);
+        }
+        if (data.totalCourseFee !== undefined) {
+            updateData.totalCourseFee = Number(data.totalCourseFee);
+        }
+        if (data.feeBillingType || data.billingCycleType) {
+            const bType = data.feeBillingType || data.billingCycleType;
+            updateData.feeBillingType = bType;
+            updateData.billingCycleType = bType;
+            if (bType === "monthly") {
+                updateData.installmentPlan = [];
+                updateData.totalCourseFee = 0;
+                updateData.numberOfInstallments = 0;
+            }
+        }
+        if (data.feeBillingType !== "monthly" && Array.isArray(data.installmentPlan)) {
+            updateData.installmentPlan = data.installmentPlan.map((inst) => ({
+                installmentNo: Number(inst.installmentNo),
+                title: String(inst.title),
+                amount: Number(inst.amount),
+                dueDate: new Date(inst.dueDate),
+                paidAmount: Number(inst.paidAmount) || 0,
+                dueAmount: Number(inst.dueAmount) || Number(inst.amount),
+                feeStatus: inst.feeStatus || "pending",
+            }));
+        }
+        const existingStudent = await student_model_1.Student.findOne({ _id: id, instituteId, status: { $ne: "deleted" } });
+        const oldBatchName = existingStudent?.batchName || "";
         if ((data.className || data.batchName) && !data.batchId) {
             const clsName = data.className || data.batchName;
             const clsDoc = await class_model_1.Class.findOne({ instituteId, name: clsName, status: { $ne: "deleted" } });
@@ -167,12 +227,34 @@ exports.studentService = {
         const student = await student_model_1.Student.findOneAndUpdate({ _id: id, instituteId }, { $set: updateData }, { new: true, runValidators: true });
         if (!student)
             throw new AppError_1.AppError("Student not found", 404);
+        // Sync updates to linked User account
+        if (student.userId) {
+            const userUpdate = {};
+            if (data.name)
+                userUpdate.name = data.name;
+            if (data.phone)
+                userUpdate.phone = data.phone;
+            if (data.email)
+                userUpdate.email = data.email.trim().toLowerCase();
+            if (Object.keys(userUpdate).length > 0) {
+                await user_model_1.User.updateOne({ _id: student.userId }, { $set: userUpdate });
+            }
+        }
+        if (student.userId && updateData.batchName && updateData.batchName !== oldBatchName) {
+            // Trigger Targeted Batch Changed Notification ONLY to this specific student!
+            notification_service_1.notificationService
+                .sendBatchChangedNotification(instituteId, student._id, student.userId, student.name, oldBatchName || "Previous Class", student.batchName || "New Batch", student.timing)
+                .catch(() => { });
+        }
         return student;
     },
     delete: async (id, instituteId) => {
         const student = await student_model_1.Student.findOneAndUpdate({ _id: id, instituteId }, { $set: { status: "deleted" } }, { new: true });
         if (!student)
             throw new AppError_1.AppError("Student not found", 404);
+        if (student.userId) {
+            await user_model_1.User.findOneAndUpdate({ _id: student.userId, instituteId }, { $set: { status: "deleted" } });
+        }
         return student;
     },
     getExamResults: async (studentId, instituteId) => {

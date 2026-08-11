@@ -42,6 +42,6 @@ const examResult_validation_1 = require("../../validations/examResult/examResult
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.verifyToken);
 router.route("/:examId/results")
-    .get((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher", "student", "parent"), examResultController.getResultsByExam)
+    .get((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), examResultController.getResultsByExam)
     .post((0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), (0, validate_middleware_1.validate)("body", examResult_validation_1.submitExamResultsSchema), examResultController.submitResults);
 exports.default = router;

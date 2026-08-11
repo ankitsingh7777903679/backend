@@ -14,7 +14,7 @@ export const getTeacher = catchAsync(async (req: Request, res: Response) => {
 });
 
 export const createTeacher = catchAsync(async (req: Request, res: Response) => {
-  const teacher = await teacherService.create(req.body, req.user.instituteId);
+  const teacher = await teacherService.create(req.body, req.user.instituteId, req.user.userId);
   res.status(201).json(apiResponse.success(teacher, "Teacher created successfully"));
 });
 

@@ -14,7 +14,7 @@ export const getStudent = catchAsync(async (req: Request, res: Response) => {
 });
 
 export const createStudent = catchAsync(async (req: Request, res: Response) => {
-  const student = await studentService.create(req.body, req.user.instituteId);
+  const student = await studentService.create(req.body, req.user.instituteId, req.user.userId);
   res.status(201).json(apiResponse.success(student, "Student admitted successfully"));
 });
 
@@ -44,4 +44,3 @@ export const getMyProfile = catchAsync(async (req: Request, res: Response) => {
   const student = await studentService.getById(req.user.userId, req.user.instituteId);
   res.json(apiResponse.success(student, "Your profile fetched successfully"));
 });
-

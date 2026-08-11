@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.refreshTokenSchema = exports.loginSchema = exports.registerInstituteSchema = void 0;
+exports.resetPasswordSchema = exports.forgotPasswordSchema = exports.refreshTokenSchema = exports.verifyOtpSchema = exports.requestOtpSchema = exports.loginSchema = exports.registerInstituteSchema = void 0;
 const zod_1 = require("zod");
 exports.registerInstituteSchema = zod_1.z.object({
     instituteName: zod_1.z.string().min(2, "Institute name must be at least 2 characters"),
@@ -12,7 +12,16 @@ exports.registerInstituteSchema = zod_1.z.object({
 exports.loginSchema = zod_1.z.object({
     emailOrPhone: zod_1.z.string().min(1, "Email or phone number is required"),
     password: zod_1.z.string().min(1, "Password is required"),
+    instituteCode: zod_1.z.string().optional().or(zod_1.z.literal("")),
     role: zod_1.z.enum(["owner", "admin", "teacher", "accountant", "student", "parent", "super_admin"]).optional(),
+});
+exports.requestOtpSchema = zod_1.z.object({
+    email: zod_1.z.string().email(),
+    instituteCode: zod_1.z.string().min(1),
+    role: zod_1.z.enum(["admin", "teacher", "student"]),
+});
+exports.verifyOtpSchema = exports.requestOtpSchema.extend({
+    otpCode: zod_1.z.string().regex(/^\d{6}$/),
 });
 exports.refreshTokenSchema = zod_1.z.object({
     refreshToken: zod_1.z.string().min(1, "Refresh token is required"),

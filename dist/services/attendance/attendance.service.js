@@ -4,6 +4,7 @@ exports.attendanceService = void 0;
 const attendance_model_1 = require("../../models/attendance/attendance.model");
 const student_model_1 = require("../../models/student/student.model");
 const class_model_1 = require("../../models/class/class.model");
+const AppError_1 = require("../../utils/AppError");
 const logger_1 = require("../../utils/logger");
 const mongoose_1 = require("mongoose");
 exports.attendanceService = {
@@ -61,8 +62,11 @@ exports.attendanceService = {
                     studId = studentDoc._id;
                 }
             }
+            if (!studId) {
+                throw new AppError_1.AppError(`Student not found for attendance record '${r.studentName || r.admissionNo}'`, 400);
+            }
             return {
-                studentId: studId || new mongoose_1.Types.ObjectId(),
+                studentId: studId,
                 studentName: r.studentName,
                 admissionNo: r.admissionNo,
                 status: r.status,

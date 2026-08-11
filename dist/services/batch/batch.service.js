@@ -28,7 +28,7 @@ exports.batchService = {
         const batch = await batch_model_1.Batch.create({
             ...data,
             instituteId,
-            enrolledCount: Math.floor(Math.random() * 15) + 10, // Mock sample initial enrollments
+            enrolledCount: 0,
         });
         return batch;
     },

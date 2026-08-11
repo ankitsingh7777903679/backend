@@ -40,4 +40,5 @@ const rbac_middleware_1 = require("../../middleware/rbac.middleware");
 const router = (0, express_1.Router)();
 router.use(auth_middleware_1.verifyToken);
 router.get("/financial", (0, rbac_middleware_1.checkRole)("owner", "admin", "accountant"), reportController.getFinancialSummary);
+router.get("/student/:studentId/progress-report", (0, rbac_middleware_1.checkRole)("owner", "admin", "teacher"), reportController.getStudentProgressReport);
 exports.default = router;

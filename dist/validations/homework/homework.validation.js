@@ -9,6 +9,8 @@ exports.createHomeworkSchema = zod_1.z.object({
     description: zod_1.z.string().optional(),
     dueDate: zod_1.z.string().min(1, "Due date is required"),
     attachmentName: zod_1.z.string().optional(),
-    homeworkStatus: zod_1.z.enum(["active", "grading_pending", "completed"]).default("active"),
+    attachmentUrl: zod_1.z.string().optional(),
+    driveFileId: zod_1.z.string().optional(),
+    homeworkStatus: zod_1.z.enum(["active", "grading_pending", "completed"]).optional().default("active"),
 });
 exports.updateHomeworkSchema = exports.createHomeworkSchema.partial();

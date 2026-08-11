@@ -51,13 +51,27 @@ export const attendanceService = {
       }
     }
 
-    const formattedRecords = await Promise.all(
+const formattedRecords = await Promise.all(
       data.records.map(async (r) => {
         let studId: Types.ObjectId | undefined = Types.ObjectId.isValid(r.studentId)
           ? new Types.ObjectId(r.studentId)
           : undefined;
 
-        if (!studId && (r.admissionNo || r.studentName)) {
+        if (studId) {
+          // A submitted student ID must map to a real student of this institute —
+          // otherwise a fabricated/stale ID would silently create orphaned rows.
+          const knownStudent = await Student.exists({
+            _id: studId,
+            instituteId,
+            status: { $ne: "deleted" },
+          });
+          if (!knownStudent) {
+            throw new AppError(
+              `Student not found for attendance record '${r.studentName || r.admissionNo}' (student ID does not match any enrolled student)`,
+              400
+            );
+          }
+        } else if (r.admissionNo || r.studentName) {
           const studentDoc = await Student.findOne({
             instituteId,
             status: { $ne: "deleted" },
@@ -68,8 +82,11 @@ export const attendanceService = {
           }
         }
 
+        if (!studId) {
+          throw new AppError(`Student not found for attendance record '${r.studentName || r.admissionNo}'`, 400);
+        }
         return {
-          studentId: studId || new Types.ObjectId(),
+          studentId: studId,
           studentName: r.studentName,
           admissionNo: r.admissionNo,
           status: r.status,

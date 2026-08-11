@@ -18,11 +18,11 @@ router.route("/")
   .post(checkRole("owner", "admin", "teacher", "accountant"), validate("body", createStudentSchema), studentController.createStudent);
 
 router.route("/:id")
-  .get(checkRole("owner", "admin", "teacher", "accountant", "parent"), studentController.getStudent)
+  .get(checkRole("owner", "admin", "teacher", "accountant"), studentController.getStudent)
   .put(checkRole("owner", "admin", "teacher", "accountant"), validate("body", updateStudentSchema), studentController.updateStudent)
   .delete(checkRole("owner", "admin", "teacher"), studentController.deleteStudent);
 
-router.get("/:id/exam-results", checkRole("owner", "admin", "teacher", "accountant", "parent", "student"), studentController.getStudentExamResults);
+router.get("/:id/exam-results", checkRole("owner", "admin", "teacher", "accountant"), studentController.getStudentExamResults);
 
 export default router;
 

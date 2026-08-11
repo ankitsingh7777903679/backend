@@ -5,7 +5,7 @@ const exam_service_1 = require("../../services/exam/exam.service");
 const catchAsync_1 = require("../../utils/catchAsync");
 const apiResponse_1 = require("../../utils/apiResponse");
 exports.getAllExams = (0, catchAsync_1.catchAsync)(async (req, res) => {
-    const exams = await exam_service_1.examService.getAll(req.user.instituteId, req.query);
+    const exams = await exam_service_1.examService.getAll(req.user.instituteId, req.query, req.user.role, req.user.userId);
     res.json(apiResponse_1.apiResponse.success(exams, "Exams fetched successfully"));
 });
 exports.getExam = (0, catchAsync_1.catchAsync)(async (req, res) => {

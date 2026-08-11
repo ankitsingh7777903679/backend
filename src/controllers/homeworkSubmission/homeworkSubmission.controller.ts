@@ -161,6 +161,7 @@ export const submitHomework = catchAsync(async (req: Request, res: Response) => 
   let submission = await HomeworkSubmission.findOne({
     homeworkId: req.params.id,
     studentId: student._id,
+    instituteId: req.user.instituteId,
   });
 
   const now = new Date();
@@ -199,7 +200,7 @@ export const submitHomework = catchAsync(async (req: Request, res: Response) => 
     });
 
     // Increment homework totalSubmissions counter
-    await Homework.findByIdAndUpdate(req.params.id, { $inc: { totalSubmissions: 1 } });
+    await Homework.updateOne({ _id: req.params.id, instituteId: req.user.instituteId }, { $inc: { totalSubmissions: 1 } });
   }
 
   return res.status(201).json(apiResponse.success(submission, isLate ? "Submitted (Late)" : "Submitted successfully! ✅"));
@@ -214,6 +215,7 @@ export const getMySubmissions = catchAsync(async (req: Request, res: Response) =
 
   const submissions = await HomeworkSubmission.find({
     studentId: student._id,
+    instituteId: req.user.instituteId,
     status: "active",
   }).sort({ createdAt: -1 });
 

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.logout = exports.refreshToken = exports.login = exports.registerInstitute = void 0;
+exports.verifyOtp = exports.sendOtp = exports.logout = exports.refreshToken = exports.login = exports.registerInstitute = void 0;
 const auth_service_1 = require("../../services/auth/auth.service");
 const catchAsync_1 = require("../../utils/catchAsync");
 const apiResponse_1 = require("../../utils/apiResponse");
@@ -19,4 +19,12 @@ exports.refreshToken = (0, catchAsync_1.catchAsync)(async (req, res) => {
 exports.logout = (0, catchAsync_1.catchAsync)(async (req, res) => {
     await auth_service_1.authService.logout(req.user.userId);
     res.json(apiResponse_1.apiResponse.success(null, "Logged out successfully"));
+});
+exports.sendOtp = (0, catchAsync_1.catchAsync)(async (req, res) => {
+    const result = await auth_service_1.authService.sendOtp(req.body);
+    res.json(apiResponse_1.apiResponse.success(result, "OTP code sent to email successfully"));
+});
+exports.verifyOtp = (0, catchAsync_1.catchAsync)(async (req, res) => {
+    const result = await auth_service_1.authService.verifyOtp(req.body);
+    res.json(apiResponse_1.apiResponse.success(result, "OTP verification successful"));
 });

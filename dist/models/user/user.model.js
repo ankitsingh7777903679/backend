@@ -44,6 +44,7 @@ const userSchema = new mongoose_1.Schema({
     passwordHash: { type: String, required: true },
     photo: { type: String },
     linkedId: { type: mongoose_1.Schema.Types.ObjectId },
+    permissions: [{ type: String }],
     status: { type: String, enum: ["active", "inactive", "deleted"], default: "active" },
     refreshToken: { type: String },
     lastLogin: { type: Date },

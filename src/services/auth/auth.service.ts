@@ -10,6 +10,22 @@ import { AppError } from "../../utils/AppError";
 import { RegisterInstituteInput, LoginInput } from "../../validations/auth/auth.validation";
 import { generateInstituteCode } from "../../utils/generateInstituteCode";
 
+type PublicLoginRole = "admin" | "teacher" | "student";
+
+const rolesForLogin = (role: PublicLoginRole) => role === "admin" ? ["owner", "admin", "accountant"] : [role];
+
+const getProfileForUser = async (user: IUser) => {
+  if (user.role === "teacher") {
+    const profile = await Teacher.findOne({ userId: user._id, instituteId: user.instituteId, status: "active", portalAccess: "active" });
+    return profile ? { profileType: "teacher" as const, profile } : null;
+  }
+  if (user.role === "student") {
+    const profile = await Student.findOne({ userId: user._id, instituteId: user.instituteId, status: "active", portalAccess: "active" });
+    return profile ? { profileType: "student" as const, profile } : null;
+  }
+  return null;
+};
+
 export const authService = {
 
   generateTokens: (user: IUser) => {
@@ -93,7 +109,7 @@ export const authService = {
     };
   },
 
-  login: async (data: LoginInput) => {
+  legacyLogin: async (data: LoginInput) => {
     const searchVal = data.emailOrPhone ? data.emailOrPhone.trim() : "";
     if (!searchVal) {
       throw new AppError("Email or phone number is required", 400);
@@ -330,6 +346,84 @@ export const authService = {
     };
   },
 
+  login: async (data: LoginInput) => {
+    const role = data.role as PublicLoginRole | undefined;
+    if (!role || !["admin", "teacher", "student"].includes(role)) {
+      throw new AppError("Select Admin, Teacher, or Student before signing in", 400);
+    }
+
+    // Admin login needs only phone/email + password — institute code is optional.
+    // Teacher/Student still require an institute code to disambiguate their institute.
+    const instituteCode = data.instituteCode?.trim().toUpperCase();
+    if (role !== "admin" && !instituteCode) {
+      throw new AppError("Institute code is required", 400);
+    }
+
+    let institute: (import("../../models/institute/institute.model").IInstitute) | null = null;
+    if (instituteCode) {
+      institute = await Institute.findOne({ code: instituteCode, status: { $ne: "deleted" } });
+      if (!institute) throw new AppError("Invalid institute code", 404);
+    }
+
+    const search = data.emailOrPhone.trim();
+    const normalizedPhone = search.replace(/\D/g, "");
+    const emailRegex = new RegExp(`^${search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+
+    const candidateQuery: Record<string, unknown> = {
+      role: { $in: rolesForLogin(role) },
+      status: "active",
+      $or: [
+        { email: emailRegex },
+        ...(normalizedPhone ? [{ phone: normalizedPhone }, { phone: search }] : []),
+      ],
+    };
+    if (institute) {
+      candidateQuery.instituteId = institute._id;
+    }
+    const candidates = await User.find(candidateQuery);
+
+    let authenticatedUser: IUser | null = null;
+    for (const candidate of candidates) {
+      if (await bcrypt.compare(data.password, candidate.passwordHash)) {
+        authenticatedUser = candidate;
+        break;
+      }
+    }
+    if (!authenticatedUser) throw new AppError("Invalid email/phone or password", 401);
+
+    const profileInfo = await getProfileForUser(authenticatedUser);
+    if ((role === "teacher" || role === "student") && !profileInfo) {
+      throw new AppError("Portal access is not active for this profile. Contact your institute administrator.", 403);
+    }
+
+    // Admin without an institute code: resolve the institute from the user account.
+    if (!institute && authenticatedUser.instituteId) {
+      institute = await Institute.findById(authenticatedUser.instituteId);
+    }
+
+    const tokens = authService.generateTokens(authenticatedUser);
+    authenticatedUser.refreshToken = tokens.refreshToken;
+    authenticatedUser.lastLogin = new Date();
+    await authenticatedUser.save();
+
+    return {
+      user: {
+        id: authenticatedUser._id,
+        name: profileInfo?.profile.name || authenticatedUser.name,
+        email: profileInfo?.profile.email || authenticatedUser.email,
+        role: authenticatedUser.role,
+        instituteId: authenticatedUser.instituteId,
+        instituteName: institute?.name || "",
+        instituteCode: institute?.code || "",
+        profileType: profileInfo?.profileType,
+        profileId: profileInfo?.profile._id,
+        teachingType: profileInfo?.profileType === "teacher" ? profileInfo.profile.teachingType : undefined,
+        portalAccess: profileInfo?.profile.portalAccess,
+      },
+      tokens,
+    };
+  },
+
   refreshAccessToken: async (refreshToken: string) => {
     try {
       const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET || "refresh_secret";
@@ -354,7 +448,7 @@ export const authService = {
     await User.findByIdAndUpdate(userId, { $unset: { refreshToken: 1 } });
   },
 
-  sendOtp: async (email: string) => {
+  legacySendOtp: async (email: string) => {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes("@")) {
       throw new AppError("A valid email address is required to receive OTP", 400);
@@ -393,7 +487,7 @@ export const authService = {
     return { message: `6-digit OTP code sent successfully to ${cleanEmail}` };
   },
 
-  verifyOtp: async (email: string, otpCode: string) => {
+  legacyVerifyOtp: async (email: string, otpCode: string) => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanCode = otpCode.trim();
 
@@ -495,5 +589,51 @@ export const authService = {
       },
       tokens,
     };
+  },
+
+  sendOtp: async (data: { email: string; instituteCode: string; role: PublicLoginRole }) => {
+    const institute = await Institute.findOne({ code: data.instituteCode.trim().toUpperCase(), status: { $ne: "deleted" } });
+    if (!institute) throw new AppError("Invalid institute code", 404);
+    const user = await User.findOne({
+      instituteId: institute._id,
+      role: { $in: rolesForLogin(data.role) },
+      email: data.email.trim().toLowerCase(),
+      status: "active",
+    });
+    if (!user) throw new AppError("No active account matches this institute, role, and email", 404);
+    const profileInfo = await getProfileForUser(user);
+    if ((data.role === "teacher" || data.role === "student") && !profileInfo) throw new AppError("Portal access is not active for this profile", 403);
+
+    const existingOtp = await Otp.findOne({ instituteId: institute._id, userId: user._id, role: user.role });
+    if (existingOtp && Date.now() - existingOtp.createdAt.getTime() < 60_000) {
+      throw new AppError("Please wait one minute before requesting another OTP", 429);
+    }
+    await Otp.deleteMany({ instituteId: institute._id, userId: user._id, role: user.role });
+    const otpCode = String(Math.floor(100000 + Math.random() * 900000));
+    await Otp.create({ email: user.email, instituteId: institute._id, userId: user._id, role: user.role, otpCode, attempts: 0, expiresAt: new Date(Date.now() + 5 * 60 * 1000) });
+    await emailService.sendOtpEmail(user.email, otpCode, profileInfo?.profile.name || user.name);
+    return { message: "OTP sent to the active portal email" };
+  },
+
+  verifyOtp: async (data: { email: string; instituteCode: string; role: PublicLoginRole; otpCode: string }) => {
+    const institute = await Institute.findOne({ code: data.instituteCode.trim().toUpperCase(), status: { $ne: "deleted" } });
+    if (!institute) throw new AppError("Invalid institute code", 404);
+    const user = await User.findOne({ instituteId: institute._id, role: { $in: rolesForLogin(data.role) }, email: data.email.trim().toLowerCase(), status: "active" });
+    if (!user) throw new AppError("No active account matches this institute, role, and email", 404);
+    const otp = await Otp.findOne({ instituteId: institute._id, userId: user._id, role: user.role });
+    if (!otp || otp.expiresAt <= new Date() || otp.attempts >= 5) throw new AppError("Invalid or expired OTP code", 400);
+    if (otp.otpCode !== data.otpCode) {
+      otp.attempts += 1;
+      await otp.save();
+      throw new AppError("Invalid or expired OTP code", 400);
+    }
+    await Otp.deleteMany({ instituteId: institute._id, userId: user._id, role: user.role });
+    const profileInfo = await getProfileForUser(user);
+    if ((data.role === "teacher" || data.role === "student") && !profileInfo) throw new AppError("Portal access is not active for this profile", 403);
+    const tokens = authService.generateTokens(user);
+    user.refreshToken = tokens.refreshToken;
+    user.lastLogin = new Date();
+    await user.save();
+    return { user: { id: user._id, name: profileInfo?.profile.name || user.name, email: profileInfo?.profile.email || user.email, role: user.role, instituteId: user.instituteId, instituteName: institute.name, instituteCode: institute.code, profileType: profileInfo?.profileType, profileId: profileInfo?.profile._id, teachingType: profileInfo?.profileType === "teacher" ? profileInfo.profile.teachingType : undefined, portalAccess: profileInfo?.profile.portalAccess }, tokens };
   },
 };

@@ -9,7 +9,7 @@ exports.createClass = (0, catchAsync_1.catchAsync)(async (req, res) => {
     res.status(201).json(apiResponse_1.apiResponse.success(newClass, "Class created successfully"));
 });
 exports.getAllClasses = (0, catchAsync_1.catchAsync)(async (req, res) => {
-    const classes = await class_service_1.classService.getAll(req.user.instituteId);
+    const classes = await class_service_1.classService.getAll(req.user.instituteId, req.user);
     res.status(200).json(apiResponse_1.apiResponse.success(classes, "Classes fetched successfully"));
 });
 exports.getClassById = (0, catchAsync_1.catchAsync)(async (req, res) => {

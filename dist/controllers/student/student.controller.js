@@ -5,7 +5,7 @@ const student_service_1 = require("../../services/student/student.service");
 const catchAsync_1 = require("../../utils/catchAsync");
 const apiResponse_1 = require("../../utils/apiResponse");
 exports.getAllStudents = (0, catchAsync_1.catchAsync)(async (req, res) => {
-    const students = await student_service_1.studentService.getAll(req.user.instituteId, req.query);
+    const students = await student_service_1.studentService.getAll(req.user.instituteId, req.query, req.user);
     res.json(apiResponse_1.apiResponse.success(students, "Students fetched successfully"));
 });
 exports.getStudent = (0, catchAsync_1.catchAsync)(async (req, res) => {
@@ -13,7 +13,7 @@ exports.getStudent = (0, catchAsync_1.catchAsync)(async (req, res) => {
     res.json(apiResponse_1.apiResponse.success(student));
 });
 exports.createStudent = (0, catchAsync_1.catchAsync)(async (req, res) => {
-    const student = await student_service_1.studentService.create(req.body, req.user.instituteId);
+    const student = await student_service_1.studentService.create(req.body, req.user.instituteId, req.user.userId);
     res.status(201).json(apiResponse_1.apiResponse.success(student, "Student admitted successfully"));
 });
 exports.updateStudent = (0, catchAsync_1.catchAsync)(async (req, res) => {

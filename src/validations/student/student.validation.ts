@@ -32,6 +32,7 @@ export const createStudentSchema = z.object({
       feeStatus: z.enum(["paid", "pending", "partial", "overdue", "verification_pending"]).optional(),
     })
   ).optional(),
+  portalAccessEnabled:   z.boolean().optional().default(false),
 });
 
 export const updateStudentSchema = createStudentSchema.partial();

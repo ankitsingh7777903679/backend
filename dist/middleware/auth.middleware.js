@@ -13,8 +13,12 @@ exports.verifyToken = (0, catchAsync_1.catchAsync)(async (req, res, next) => {
         throw new AppError_1.AppError("Authentication required. Token missing.", 401);
     }
     const token = authHeader.split(" ")[1];
+    const secret = process.env.JWT_ACCESS_SECRET;
+    if (!secret) {
+        throw new AppError_1.AppError("JWT Access Secret not configured in environment.", 500);
+    }
     try {
-        const decoded = jsonwebtoken_1.default.verify(token, process.env.JWT_ACCESS_SECRET || "access_secret");
+        const decoded = jsonwebtoken_1.default.verify(token, secret);
         req.user = decoded;
         next();
     }

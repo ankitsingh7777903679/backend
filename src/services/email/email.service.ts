@@ -1,6 +1,21 @@
 import axios from "axios";
 
 export const emailService = {
+  sendPortalInvitationEmail: async (toEmail: string, recipientName: string, inviteUrl: string, role: "teacher" | "student"): Promise<boolean> => {
+    const roleLabel = role === "teacher" ? "Teacher Portal" : "Student Portal";
+    const subject = `TuitionPro ${roleLabel} invitation`;
+    const html = `<p>Hello ${recipientName},</p><p>Your institute has enabled access to the ${roleLabel}.</p><p><a href="${inviteUrl}">Set your password and activate your account</a></p><p>This secure link expires in 72 hours and can be used once.</p>`;
+    if (process.env.RESEND_API_KEY) {
+      try {
+        await axios.post("https://api.resend.com/emails", { from: "TuitionPro <onboarding@resend.dev>", to: [toEmail], subject, html }, { headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` } });
+        return true;
+      } catch (err: any) {
+        console.warn("[EmailService] Portal invitation email failed:", err?.response?.data || err?.message);
+      }
+    }
+    console.log(`[PORTAL INVITATION] To: ${toEmail} | ${inviteUrl}`);
+    return true;
+  },
   /**
    * Helper to get Google OAuth2 Access Token using Refresh Token
    */
@@ -256,4 +271,3 @@ export const emailService = {
     return true;
   },
 };
-

@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Institute = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const instituteSchema = new mongoose_1.Schema({
+    code: { type: String, required: true, uppercase: true, trim: true },
     name: { type: String, required: true, trim: true },
     ownerName: { type: String, required: true, trim: true },
     phone: { type: String, required: true },
@@ -48,6 +49,7 @@ const instituteSchema = new mongoose_1.Schema({
     subscriptionPlan: { type: String, enum: ["free", "starter", "pro", "enterprise"], default: "free" },
     status: { type: String, enum: ["active", "suspended", "deleted"], default: "active" },
 }, { timestamps: true });
+instituteSchema.index({ code: 1 }, { unique: true });
 instituteSchema.index({ email: 1 }, { unique: true });
 instituteSchema.index({ phone: 1 });
 instituteSchema.index({ status: 1 });

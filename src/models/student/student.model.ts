@@ -16,6 +16,7 @@ export interface IInstallmentItem {
 export interface IStudent extends Document {
   instituteId: Types.ObjectId; // PEHLA FIELD HAMESHA
   userId?: Types.ObjectId;
+  portalAccess: "disabled" | "invited" | "active";
   admissionNo: string;
   firstName: string;
   lastName: string;
@@ -54,6 +55,7 @@ const studentSchema = new Schema<IStudent>(
   {
     instituteId:          { type: Schema.Types.ObjectId, ref: "Institute", required: true, index: true },
     userId:               { type: Schema.Types.ObjectId, ref: "User" },
+    portalAccess:         { type: String, enum: ["disabled", "invited", "active"], default: "disabled" },
     admissionNo:          { type: String, required: true, trim: true },
     firstName:            { type: String, required: true, trim: true },
     lastName:             { type: String, required: true, trim: true },
@@ -86,7 +88,7 @@ const studentSchema = new Schema<IStudent>(
     discountReason:       { type: String, trim: true },
     parentName:           { type: String, required: true, trim: true },
     parentPhone:          { type: String, required: true, trim: true },
-    batchId:              { type: Schema.Types.ObjectId, ref: "Batch" },
+    batchId:              { type: Schema.Types.ObjectId, ref: "Class" },
     batchName:            { type: String, trim: true, default: "General Class" },
     schoolName:           { type: String, trim: true, default: "" },
     schoolClass:          { type: String, trim: true, default: "" },
@@ -94,7 +96,7 @@ const studentSchema = new Schema<IStudent>(
     timing:               { type: String, trim: true, default: "" },
     address:              { type: String, trim: true },
     photo:                { type: String },
-    feeStatus:            { type: String, enum: ["paid", "pending", "overdue"], default: "pending" },
+    feeStatus:            { type: String, enum: ["paid", "pending", "partial", "overdue", "verification_pending"], default: "pending" },
     attendancePercentage: { type: Number, default: 100 },
     status:               { type: String, enum: ["active", "inactive", "alumni", "deleted"], default: "active" },
   },
@@ -104,5 +106,6 @@ const studentSchema = new Schema<IStudent>(
 studentSchema.index({ instituteId: 1, status: 1 });
 studentSchema.index({ instituteId: 1, phone: 1 });
 studentSchema.index({ instituteId: 1, admissionNo: 1 }, { unique: true });
+studentSchema.index({ userId: 1 }, { unique: true, sparse: true });
 
 export const Student = mongoose.model<IStudent>("Student", studentSchema);

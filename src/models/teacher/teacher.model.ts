@@ -5,7 +5,9 @@ export interface ITeacher extends Document {
   userId?: Types.ObjectId;
   name: string;
   phone: string;
-  email: string;
+  email?: string;
+  teachingType: "coaching" | "home_tuition" | "both";
+  portalAccess: "disabled" | "invited" | "active";
   subjects: string[];
   qualification?: string;
   experienceYears: number;
@@ -26,13 +28,15 @@ const teacherSchema = new Schema<ITeacher>(
     name:             { type: String, required: true, trim: true },
     phone:            { type: String, required: true, trim: true },
     email:            { type: String, required: false, lowercase: true, trim: true },
+    teachingType:     { type: String, enum: ["coaching", "home_tuition", "both"], default: "coaching" },
+    portalAccess:     { type: String, enum: ["disabled", "invited", "active"], default: "disabled" },
     subjects:         [{ type: String, trim: true }],
     qualification:    { type: String, trim: true },
     experienceYears:  { type: Number, default: 0 },
     employmentType:   { type: String, enum: ["full_time", "part_time", "guest"], default: "full_time" },
     joiningDate:      { type: Date },
     photo:            { type: String },
-    assignedBatchIds: [{ type: Schema.Types.ObjectId, ref: "Batch" }],
+    assignedBatchIds: [{ type: Schema.Types.ObjectId, ref: "Class" }],
     permissions:      [{
       type: String,
       default: [
@@ -52,5 +56,6 @@ const teacherSchema = new Schema<ITeacher>(
 
 teacherSchema.index({ instituteId: 1, status: 1 });
 teacherSchema.index({ instituteId: 1, phone: 1 });
+teacherSchema.index({ userId: 1 }, { unique: true, sparse: true });
 
 export const Teacher = mongoose.model<ITeacher>("Teacher", teacherSchema);

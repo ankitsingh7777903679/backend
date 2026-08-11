@@ -26,6 +26,10 @@ const whatsapp_routes_1 = __importDefault(require("./routes/whatsapp/whatsapp.ro
 const report_routes_1 = __importDefault(require("./routes/report/report.routes"));
 const superAdmin_routes_1 = __importDefault(require("./routes/superAdmin/superAdmin.routes"));
 const setting_routes_1 = __importDefault(require("./routes/setting/setting.routes"));
+const notification_routes_1 = __importDefault(require("./routes/notification/notification.routes"));
+const studyMaterial_routes_1 = __importDefault(require("./routes/studyMaterial/studyMaterial.routes"));
+const aiQuestionGenerator_routes_1 = __importDefault(require("./routes/aiQuestionGenerator/aiQuestionGenerator.routes"));
+const portalAccess_routes_1 = __importDefault(require("./routes/portalAccess/portalAccess.routes"));
 const errorHandler_middleware_1 = require("./middleware/errorHandler.middleware");
 const app = (0, express_1.default)();
 // Security Middleware
@@ -63,6 +67,10 @@ app.use("/api/whatsapp", whatsapp_routes_1.default);
 app.use("/api/reports", report_routes_1.default);
 app.use("/api/super-admin", superAdmin_routes_1.default);
 app.use("/api/settings", setting_routes_1.default);
+app.use("/api/notifications", notification_routes_1.default);
+app.use("/api/materials", studyMaterial_routes_1.default);
+app.use("/api/ai", aiQuestionGenerator_routes_1.default);
+app.use("/api/portal-invitations", portalAccess_routes_1.default);
 // Global Error Handler (MUST BE LAST)
 app.use(errorHandler_middleware_1.errorHandler);
 exports.default = app;

@@ -45,6 +45,12 @@ const settingSchema = new mongoose_1.Schema({
     smsEnabled: { type: Boolean, default: false },
     attendanceReminderTime: { type: String, default: "10:30 AM" },
     feeReminderDaysBefore: { type: Number, default: 5 },
+    upiId: { type: String, trim: true },
+    payeeName: { type: String, trim: true },
+    upiNote: { type: String, trim: true, default: "Monthly Tuition Fee" },
+    lateFeePerDay: { type: Number, default: 10 },
+    dueDayOfMonth: { type: Number, default: 5 },
+    graceDays: { type: Number, default: 2 },
     status: { type: String, enum: ["active", "deleted"], default: "active" },
 }, { timestamps: true });
 exports.Setting = mongoose_1.default.model("Setting", settingSchema);

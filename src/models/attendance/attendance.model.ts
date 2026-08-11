@@ -40,7 +40,7 @@ const attendanceRecordSchema = new Schema<IAttendanceRecord>(
 const attendanceSchema = new Schema<IAttendance>(
   {
     instituteId:        { type: Schema.Types.ObjectId, ref: "Institute", required: true, index: true },
-    batchId:            { type: Schema.Types.ObjectId, ref: "Batch", required: true, index: true },
+    batchId:            { type: Schema.Types.ObjectId, ref: "Class", required: true, index: true },
     batchName:          { type: String, required: true },
     date:               { type: Date, required: true },
     dateStr:            { type: String, required: true, index: true },

@@ -8,6 +8,6 @@ const router = Router();
 router.use(verifyToken);
 
 router.get("/financial", checkRole("owner", "admin", "accountant"), reportController.getFinancialSummary);
-router.get("/student/:studentId/progress-report", checkRole("owner", "admin", "teacher", "student", "parent"), reportController.getStudentProgressReport);
+router.get("/student/:studentId/progress-report", checkRole("owner", "admin", "teacher"), reportController.getStudentProgressReport);
 
 export default router;
