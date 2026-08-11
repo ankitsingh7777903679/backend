@@ -237,7 +237,7 @@ export const reportService = {
 
     const attendancePct = totalSessionsHeld > 0
       ? Number(((presentDays / totalSessionsHeld) * 100).toFixed(1))
-      : (student.attendancePercentage || 92.5);
+      : (student.attendancePercentage || 0);
 
     // 2. Homework Completion Data
     const homeworkList = await Homework.find({
@@ -259,7 +259,7 @@ export const reportService = {
     const homeworkSubmitted = submissions.length;
     const homeworkCompletionRate = homeworkAssigned > 0
       ? Number(((homeworkSubmitted / homeworkAssigned) * 100).toFixed(1))
-      : 85.0;
+      : 0;
 
     // 3. Exam & Test Results Performance
     const examResults = await ExamResult.find({
@@ -298,7 +298,7 @@ export const reportService = {
 
     const overallExamPct = totalMaxMarks > 0
       ? Number(((totalObtainedMarks / totalMaxMarks) * 100).toFixed(1))
-      : 88.4;
+      : 0;
 
     // Subject-wise Breakdown
     const subjectBreakdownMap = new Map<string, { totalObtained: number; totalMax: number; count: number }>();
@@ -311,15 +311,17 @@ export const reportService = {
       subjectBreakdownMap.set(subj, existing);
     });
 
-    const subjectWiseSummary = Array.from(subjectBreakdownMap.entries()).map(([subj, d]) => {
-      const pct = d.totalMax > 0 ? Number(((d.totalObtained / d.totalMax) * 100).toFixed(1)) : 85;
-      let grade = "A";
-      if (pct >= 90) grade = "A+";
-      else if (pct >= 80) grade = "A";
-      else if (pct >= 70) grade = "B";
-      else if (pct >= 60) grade = "C";
-      else if (pct >= 33) grade = "D";
-      else grade = "F";
+    let subjectWiseSummary = Array.from(subjectBreakdownMap.entries()).map(([subj, d]) => {
+      const pct = d.totalMax > 0 ? Number(((d.totalObtained / d.totalMax) * 100).toFixed(1)) : 0;
+      let grade = "N/A";
+      if (d.totalMax > 0) {
+        if (pct >= 90) grade = "A+";
+        else if (pct >= 80) grade = "A";
+        else if (pct >= 70) grade = "B";
+        else if (pct >= 60) grade = "C";
+        else if (pct >= 33) grade = "D";
+        else grade = "F";
+      }
 
       return {
         subject: subj,
@@ -330,6 +332,23 @@ export const reportService = {
         grade,
       };
     });
+
+    // If no tests evaluated yet, populate default subject list from Class or Student model
+    if (subjectWiseSummary.length === 0) {
+      const classDoc = await Class.findOne({ instituteId, $or: [{ name: batchName }, { _id: student.batchId }] });
+      const assignedSubjects = (classDoc?.subjects && classDoc.subjects.length > 0)
+        ? classDoc.subjects
+        : [];
+
+      subjectWiseSummary = assignedSubjects.map((sub) => ({
+        subject: sub,
+        testsCount: 0,
+        marksObtained: 0,
+        totalMarks: 0,
+        percentage: 0,
+        grade: "No Test",
+      }));
+    }
 
     // 4. Batch Rank Calculation
     const allBatchStudents = await Student.find({
@@ -342,11 +361,14 @@ export const reportService = {
     let batchRank = 1;
 
     // Auto-generate Remarks
-    let remarks = `${student.name} demonstrates excellent academic focus in ${batchName}. Attendance is ${attendancePct}% and homework completion is at ${homeworkCompletionRate}%.`;
-    if (attendancePct < 75) {
-      remarks += " Please ensure regular attendance to improve exam results.";
-    } else if (overallExamPct >= 85) {
-      remarks += " Outstanding exam performance! Keep up the brilliant effort.";
+    let remarks = `${student.name} is enrolled in ${batchName}.`;
+    if (totalSessionsHeld > 0) {
+      remarks += ` Attendance rate is ${attendancePct}%.`;
+    }
+    if (totalMaxMarks > 0) {
+      remarks += ` Overall exam average is ${overallExamPct}%.`;
+    } else {
+      remarks += ` Academic performance tracking is active.`;
     }
 
     return {
